@@ -3,6 +3,8 @@
 import skimage
 from skimage import color
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import matplotlib.patches as patches
 import numpy as np
 
 import random
@@ -11,14 +13,29 @@ import random
 npixel=128
 
 
+## debug
+
+
+def makeRectangle(size, pos, image):
+    print('pos', pos)
+    posa = [pos[0]-size[0]/2., pos[1]-size[1]/2.]
+    print('pos',posa)
+    print('size',size[0],size[1])
+    print(image[int(pos[1])][int(pos[0])])
+    print(image[0][0])
+    return patches.Rectangle(posa,size[0],size[1],linewidth=1,edgecolor='y',facecolor='none')
+
+##
+
+
 def getCenterCoords(t1):
-    #yes, that is the format
-    coords1a = (t1[0][1][0][1]+t1[0][1][0][0])/2.
-    coords1b = (t1[0][1][1][1]+t1[0][1][1][0])/2.
+    #yes, that is the format - no, there is a bug in here!!!
+    coords1b = (t1[0][1][0][1]+t1[0][1][0][0])/2.
+    coords1a = (t1[0][1][1][1]+t1[0][1][1][0])/2.
     return coords1a, coords1b
 
 def getWidthAndHeight(t1):
-    return t1[0][1][1][1]-t1[0][1][1][0] ,t1[0][1][0][1]-t1[0][1][0][0]
+    return  t1[0][1][1][1]-t1[0][1][1][0], t1[0][1][0][1]-t1[0][1][0][0]
 
 def labeltoonehot(desc):
     if desc[0][0] == 'rectangle':
@@ -72,11 +89,20 @@ def checkobj_overlap(dscs,dsc):
             return True
     return False
     
-
+#fig,ax = plt.subplots(1)
 def generate_shape(npixel):
     image, desc = skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
                                       min_size=npixel/5, max_size=npixel/3,
                                       intensity_range=((100, 254),))
+    
+    ##debug
+    
+    
+    #ax.add_patch(makeRectangle(getWidthAndHeight(desc), getCenterCoords(desc), image))
+    
+    #print(desc)
+    
+    ### 
     return image, desc
 
 def addshape(image , desclist, npixel):
@@ -114,7 +140,8 @@ def create_images(nimages = 1000, npixel=64):
     pix_x = np.expand_dims(pix_x,axis=2)
     pix_y = np.tile(np.expand_dims(pixrange,axis=1), [1,npixel])
     pix_y = np.expand_dims(pix_y,axis=2)
-    pix_coords = np.concatenate([pix_x,pix_y],axis=-1)
+    pix_coords = np.concatenate([pix_y,pix_x],axis=-1)
+    
     
     alltruth = []
     allimages = []
@@ -133,15 +160,18 @@ def create_images(nimages = 1000, npixel=64):
                 totobjects+=1
                 ptruth = createPixelTruth(des, obj, ptruth)
                 image = new_image
+                
         
         mask = createMask(ptruth)
         ptruth = np.concatenate([mask,ptruth],axis=-1)
         ptruth = addNObjects(ptruth,totobjects)
         
-        
+        #ax.imshow(image)
         image = np.concatenate([image,pix_coords],axis=-1)
         image = np.expand_dims(image,axis=0)
         ptruth = np.expand_dims(ptruth,axis=0)
+        
+        
         
         #for x in range(ptruth.shape[1]):
         #    for y in range(ptruth.shape[2]):
@@ -149,7 +179,8 @@ def create_images(nimages = 1000, npixel=64):
         
         #plt.imshow(image[0])
         #plt.show()
-        
+        #fig.savefig("image.png")
+        #exit()
         allimages.append(image)
         alltruth.append(ptruth)
     
