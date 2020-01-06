@@ -21,9 +21,9 @@ import tensorflow as tf
 import os
 
 
-nbatch=7 #1*7
+nbatch=3 * 7 #1*7
 
-plots_after_n_batch=100
+plots_after_n_batch=1000
 use_event=8
 learningrate=1e-4
 
@@ -32,14 +32,11 @@ momentum=0.6
 def model(Inputs,feature_dropout=-1.):
 
     x = Inputs[0] #this is the self.x list from the TrainData data structure
-    x_in = BatchNormalization(momentum=momentum)(x)
-    x = x_in
+    x = BatchNormalization(momentum=momentum)(x)
+    
     for i in range(8):
-        x = Conv2DGlobalExchange()(x)
-        x = Dense(12,activation='elu')(x)
-        x = Conv2D(12, (8,8), padding='same', activation='elu')(x)
+        x = Conv2D(32, (12,12), padding='same', activation='elu')(x)
         x = BatchNormalization(momentum=momentum)(x)
-        
     
     '''
     p_beta   =  tf.reshape(pred[:,:,:,0:1], [pred.shape[0],pred.shape[1]*pred.shape[2],-1])
@@ -50,11 +47,7 @@ def model(Inputs,feature_dropout=-1.):
     p_ccoords = tf.reshape(pred[:,:,:,8:10], [pred.shape[0],pred.shape[1]*pred.shape[2],-1])
                  
     '''
-    x = Conv2DGlobalExchange()(x)
-    x = BatchNormalization(momentum=momentum)(x)
-    x = Dense(32,activation = 'tanh')(x)
-    x = Dense(32,activation = 'elu')(x)
-    x = Concatenate()([x_in,x])
+    
         
     p_beta    = Conv2D(1, (1,1), padding='same',activation='sigmoid',
                        #kernel_initializer='zeros',
@@ -106,31 +99,32 @@ from tools import plot_pixel_2D_clustering_during_training
 #
 samplepath = "/afs/cern.ch/user/j/jkiesele/Cernbox/HGCal/BetaToys/DJC2/test/"
 
-ppdts= [ plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"/1.djctd",
-               output_file=train.outputDir+'/train_progress0',
-               use_event=use_event,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False
-               ),
-    plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"1.djctd",
-               output_file=train.outputDir+'/train_progress0_bt',
-               use_event=use_event,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False,
-               beta_threshold=0.85
-               ),
-    plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"1.djctd",
-               output_file=train.outputDir+'/train_progress2',
-               use_event=use_event+2,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False
-               )  ] #only first and last
+ppdts = []
+#ppdts= [ plot_pixel_2D_clustering_during_training(
+#               samplefile=samplepath+"/1.djctd",
+#               output_file=train.outputDir+'/train_progress0',
+#               use_event=use_event,
+#               afternbatches=plots_after_n_batch,
+#               on_epoch_end=False,
+#               mask=False
+#               ),
+#    plot_pixel_2D_clustering_during_training(
+#               samplefile=samplepath+"1.djctd",
+#               output_file=train.outputDir+'/train_progress0_bt',
+#               use_event=use_event,
+#               afternbatches=plots_after_n_batch,
+#               on_epoch_end=False,
+#               mask=False,
+#               beta_threshold=0.85
+#               ),
+#    plot_pixel_2D_clustering_during_training(
+#               samplefile=samplepath+"1.djctd",
+#               output_file=train.outputDir+'/train_progress2',
+#               use_event=use_event+2,
+#               afternbatches=plots_after_n_batch,
+#               on_epoch_end=False,
+#               mask=False
+#               )  ] #only first and last
 
 
 from Losses import beta_coord_loss
@@ -154,7 +148,8 @@ train.compileModel(learningrate=learningrate,
                   
 print(train.keras_model.summary())
 
-ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
+
+ppdts_callbacks=None #[ppdts[i].callback for i in range(len(ppdts))]
 
 verbosity=2
 
@@ -182,16 +177,9 @@ model,history = train.trainModel(nepochs=1+5+10,
                                  additional_callbacks=ppdts_callbacks)
 
 
-for p in ppdts:
-    p.end_job()
-    
-exit()
-
-
-train.change_learning_rate(learningrate/50.)
 model,history = train.trainModel(nepochs=50+200, 
                                  batchsize=nbatch,
-                                 checkperiod=10, # saves a checkpoint model every N epochs
+                                 checkperiod=50, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
                                  additional_callbacks=ppdts_callbacks)
 
@@ -199,7 +187,7 @@ model,history = train.trainModel(nepochs=50+200,
 train.change_learning_rate(learningrate/100.)
 model,history = train.trainModel(nepochs=250+250, 
                                  batchsize=nbatch,
-                                 checkperiod=1, # saves a checkpoint model every N epochs
+                                 checkperiod=50, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
                                  additional_callbacks=ppdts_callbacks)
 

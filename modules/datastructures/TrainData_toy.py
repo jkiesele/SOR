@@ -17,7 +17,11 @@ class TrainData_toy(TrainData):
         # options are not yet described here
         from toygenerator import create_images
         
-        feature_array, trutharray = create_images(3000,npixel=64)
+        seed = None
+        if not istraining:
+            seed = 100
+        
+        feature_array, trutharray = create_images(3000,npixel=64,seed=seed)
         print('created', len(feature_array),' samples ')
         return [feature_array] , [trutharray], []
 

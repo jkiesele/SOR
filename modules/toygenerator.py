@@ -30,12 +30,12 @@ def makeRectangle(size, pos, image):
 
 def getCenterCoords(t1):
     #yes, that is the format - no, there is a bug in here!!!
-    coords1b = (t1[0][1][0][1]+t1[0][1][0][0])/2.
-    coords1a = (t1[0][1][1][1]+t1[0][1][1][0])/2.
+    coords1b = float(t1[0][1][0][1]+t1[0][1][0][0])/2.
+    coords1a = float(t1[0][1][1][1]+t1[0][1][1][0])/2.
     return coords1a, coords1b
 
 def getWidthAndHeight(t1):
-    return  t1[0][1][1][1]-t1[0][1][1][0], t1[0][1][0][1]-t1[0][1][0][0]
+    return  float(t1[0][1][1][1]-t1[0][1][1][0]), float(t1[0][1][0][1]-t1[0][1][0][0])
 
 def labeltoonehot(desc):
     if desc[0][0] == 'rectangle':
@@ -90,38 +90,40 @@ def checkobj_overlap(dscs,dsc):
     return False
     
 #fig,ax = plt.subplots(1)
-def generate_shape(npixel):
-    image, desc = skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
+def generate_shape(npixel, seed=None):
+    if seed is not None:
+        return skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
                                       min_size=npixel/5, max_size=npixel/3,
                                       intensity_range=((100, 254),))
+    else:
+        return skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
+                                      min_size=npixel/5, max_size=npixel/3,
+                                      intensity_range=((100, 254),), random_seed=seed)
     
-    ##debug
-    
-    
-    #ax.add_patch(makeRectangle(getWidthAndHeight(desc), getCenterCoords(desc), image))
-    
-    #print(desc)
-    
-    ### 
-    return image, desc
 
-def addshape(image , desclist, npixel):
+#adds a shape BEHIND the existing ones
+def addshape(image , desclist, npixel, seed=None):
     if image is None:
         image, d = generate_shape(npixel)
         return image, image, d, True
     
-    new_image, desc = generate_shape(npixel)
+    new_image, desc = generate_shape(npixel,seed)
     
-    if checkobj_overlap(desclist,desc):
-        return image, image, desc, False
+    #if checkobj_overlap(desclist,desc):
+    #    return image, image, desc, False
     
     shape = new_image.shape
-    select = new_image > 254
+    select = image < 255 #only where the image was not empty before
     
-    return np.where(select,image,new_image), new_image, desc, True
+    newobjectadded = np.where(select,image,new_image)
+    
+    if np.all(newobjectadded == image): 
+        image, image, desc, False
+    
+    return newobjectadded, new_image, desc, True
 
 
-def create_images(nimages = 1000, npixel=64):
+def create_images(nimages = 1000, npixel=64, seed=None):
     '''
     returns features, truth
     
@@ -155,13 +157,19 @@ def create_images(nimages = 1000, npixel=64):
         totobjects=0
         ptruth=None
         for i in range(nobjects):
-            new_image, obj, des, addswitch = addshape(image,indivdesc, npixel=npixel)
+            new_image, obj, des, addswitch = addshape(image,indivdesc, npixel=npixel, seed=seed)
             if addswitch:
                 totobjects+=1
                 ptruth = createPixelTruth(des, obj, ptruth)
                 image = new_image
                 
-        
+        #print(image)
+        if e < 100 and False:
+            plt.imshow(image)
+            #plt.show()
+            plt.savefig("image"+str(e)+".png")
+            #exit()
+            #
         mask = createMask(ptruth)
         ptruth = np.concatenate([mask,ptruth],axis=-1)
         ptruth = addNObjects(ptruth,totobjects)
@@ -171,16 +179,13 @@ def create_images(nimages = 1000, npixel=64):
         image = np.expand_dims(image,axis=0)
         ptruth = np.expand_dims(ptruth,axis=0)
         
-        
+        if seed is not None:
+            seed+=1
         
         #for x in range(ptruth.shape[1]):
         #    for y in range(ptruth.shape[2]):
         #        print(ptruth[0][x][y])
         
-        #plt.imshow(image[0])
-        #plt.show()
-        #fig.savefig("image.png")
-        #exit()
         allimages.append(image)
         alltruth.append(ptruth)
     

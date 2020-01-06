@@ -6,3 +6,15 @@ def beta_coord_loss(truth, pred):
     from betaLosses import coord_loss
     return coord_loss(truth, pred)
 global_loss_list['beta_coord_loss']=beta_coord_loss
+
+
+def beta_coord_loss_pretrain(truth, pred):
+    from betaLosses import coord_loss
+    return coord_loss(truth, pred, pretrain=True)
+global_loss_list['beta_coord_loss_pretrain']=beta_coord_loss_pretrain
+
+
+def beta_coord_loss_lin(truth, pred):
+    from betaLosses import coord_loss
+    return coord_loss(truth, pred, alllinear=True)
+global_loss_list['beta_coord_loss_lin']=beta_coord_loss_lin
