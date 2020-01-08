@@ -94,7 +94,7 @@ def checkobj_overlap(dscs,dsc):
 def generate_shape(npixel, seed=None):
     if seed is not None:
         return skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
-                                      min_size=npixel/5, max_size=npixel/3,
+                                      min_size=npixel/3, max_size=npixel/2,
                                       intensity_range=((100, 254),))
     else:
         return skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
