@@ -20,6 +20,7 @@ from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_
 import tensorflow as tf
 import os
 
+from Losses import kernel_loss
 
 nbatch=3 * 7 #1*7
 
@@ -35,7 +36,7 @@ def model(Inputs,feature_dropout=-1.):
     x = BatchNormalization(momentum=momentum)(x)
     
     for i in range(8):
-        x = Conv2D(32, (12,12), padding='same', activation='elu')(x)
+        x = Conv2D(32, (8,8), padding='same', activation='elu')(x)
         x = BatchNormalization(momentum=momentum)(x)
     
     '''
@@ -143,7 +144,7 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     
     #for regression use a different loss, e.g. mean_squared_error
 train.compileModel(learningrate=learningrate,
-                   loss=beta_coord_loss,
+                   loss=kernel_loss,
                    )#metrics=[pixel_over_threshold_accuracy]) 
                   
 print(train.keras_model.summary())

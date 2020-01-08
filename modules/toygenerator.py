@@ -47,7 +47,7 @@ def labeltoonehot(desc):
     
     raise Exception("labeltoonehot: "+desc[0][0])
    
-def createPixelTruth(desc,image, ptruth):
+def createPixelTruth(desc,image, ptruth, objid):
     onehot = labeltoonehot(desc)
     coordsa,coordsb = getCenterCoords(desc)
     coords = np.array([coordsa,coordsb], dtype='float32')
@@ -55,12 +55,13 @@ def createPixelTruth(desc,image, ptruth):
     truth = np.expand_dims(np.expand_dims(truth, axis=0),axis=0)
     truth = np.tile(truth, [image.shape[0],image.shape[1],1])
     w,h = getWidthAndHeight(desc)
-    wh = np.array([w,h], dtype='float32')
-    wh = np.expand_dims(np.expand_dims(wh, axis=0),axis=0)
-    wh = np.tile(wh, [image.shape[0],image.shape[1],1])
-    truth =  np.concatenate([truth,wh],axis=-1)
+    whid = np.array([w,h,objid], dtype='float32')
+    whid = np.expand_dims(np.expand_dims(whid, axis=0),axis=0)
+    whid = np.tile(whid, [image.shape[0],image.shape[1],1])
+    truth =  np.concatenate([truth,whid],axis=-1)
     if ptruth is None:
         ptruth = np.zeros_like(truth)+255
+        ptruth[:,:,-1] = -1
     truthinfo = np.where(np.tile(np.expand_dims(image[:,:,0]<255, axis=2), [1,1,truth.shape[2]]), truth, ptruth)
     return truthinfo
     
@@ -97,7 +98,7 @@ def generate_shape(npixel, seed=None):
                                       intensity_range=((100, 254),))
     else:
         return skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
-                                      min_size=npixel/5, max_size=npixel/3,
+                                      min_size=npixel/3, max_size=npixel/2, # 5, 3
                                       intensity_range=((100, 254),), random_seed=seed)
     
 
@@ -113,17 +114,27 @@ def addshape(image , desclist, npixel, seed=None):
     #    return image, image, desc, False
     
     shape = new_image.shape
-    select = image < 255 #only where the image was not empty before
+    notempty = image < 255 #only where the image was not empty before
+    empty = image > 254
     
-    newobjectadded = np.where(select,image,new_image)
+    newpixels = new_image < 255
+    pixelstoadd = np.logical_and(newpixels, empty)
+    n_objpixels = np.count_nonzero(newpixels[:,:,0])
+    n_newpixels = np.count_nonzero(pixelstoadd[:,:,0])
+    visible_fraction = float(n_newpixels)/float(n_objpixels)
     
-    if np.all(newobjectadded == image): 
-        image, image, desc, False
+    print('n_newpixels/n_objpixels',visible_fraction)
+    
+    newobjectadded = np.where(notempty,image,new_image)
+    
+    if np.all(newobjectadded == image) or visible_fraction<0.1: 
+        return image, image, desc, False
     
     return newobjectadded, new_image, desc, True
 
 
 def create_images(nimages = 1000, npixel=64, seed=None):
+
     '''
     returns features, truth
     
@@ -135,7 +146,7 @@ def create_images(nimages = 1000, npixel=64, seed=None):
     B x P x P x T
     with T = [mask, true_posx, true_posy, ID_0, ID_1, ID_2, true_width, true_height, n_objects]
     '''
-    
+    debug = False
     
     pixrange = np.arange(npixel, dtype='float32')
     pix_x = np.tile(np.expand_dims(pixrange,axis=0), [npixel,1])
@@ -150,21 +161,37 @@ def create_images(nimages = 1000, npixel=64, seed=None):
     for e in range(nimages):
         dsc=[]
         image=None
-        nobjects = random.randint(1,7)
+        nobjects = random.randint(1,9)
         addswitch=True
         indivimgs=[]
         indivdesc=[]
-        totobjects=0
         ptruth=None
-        for i in range(nobjects):
+        i=0
+        itcounter=0
+        while i < nobjects:
+            print('e,i',e,i)
+            itcounter+=1
             new_image, obj, des, addswitch = addshape(image,indivdesc, npixel=npixel, seed=seed)
             if addswitch:
-                totobjects+=1
-                ptruth = createPixelTruth(des, obj, ptruth)
+                ptruth = createPixelTruth(des, obj, ptruth, i)
                 image = new_image
+                if debug:
+                    fig,ax =  plt.subplots(1,1)
+                    ax.imshow(image)
+                    w,h = getWidthAndHeight(des)
+                    x,y = getCenterCoords(des)
+                    rec=makeRectangle([w,h], [x,y], image)
+                    ax.add_patch(rec)
+                    fig.savefig("image"+str(e)+"_"+str(i)+".png")
+                    plt.close()
+                i+=1
+            else:
+                print("skip "+str(e)," ", str(i))
+            if itcounter>100: #safety against endless loops for weird object combinations
+                break
                 
         #print(image)
-        if e < 100 and False:
+        if e < 100 and debug:
             plt.imshow(image)
             #plt.show()
             plt.savefig("image"+str(e)+".png")
@@ -172,7 +199,7 @@ def create_images(nimages = 1000, npixel=64, seed=None):
             #
         mask = createMask(ptruth)
         ptruth = np.concatenate([mask,ptruth],axis=-1)
-        ptruth = addNObjects(ptruth,totobjects)
+        #ptruth = addNObjects(ptruth,i)
         
         #ax.imshow(image)
         image = np.concatenate([image,pix_coords],axis=-1)

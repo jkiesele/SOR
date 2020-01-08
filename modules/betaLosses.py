@@ -37,7 +37,7 @@ def create_pixel_loss_dict(truth, pred):
     outdict['t_pos']  =  tf.reshape(truth[:,:,:,1:3], reshaping, name="lala")/16.
     outdict['t_ID']   =  tf.reshape(truth[:,:,:,3:6], reshaping)  
     outdict['t_dim']  =  tf.reshape(truth[:,:,:,6:8], reshaping)/4.
-    n_objects = truth[:,0,0,8]
+    outdict['t_objidx']  = tf.reshape(truth[:,:,:,8:9], reshaping)
 
     print('pred',pred.shape)
 
@@ -55,6 +55,225 @@ def create_pixel_loss_dict(truth, pred):
     
     
     return outdict
+
+def create_kernel_loss_dict(truth, pred):
+    '''
+    input features as
+    B x P x P x F
+    with F = colours
+    
+    truth as 
+    B x P x P x T
+    with T = [mask, true_posx, true_posy, ID_0, ID_1, ID_2, true_width, true_height, n_objects]
+    
+    all outputs in B x V x 1/F form except
+    n_active: B x 1
+    
+    '''
+    outdict={}
+    #truth = tf.Print(truth,[truth],'truth',summarize=30)
+    
+    #make it all lists
+    outdict['t_mask'] =  truth[:,:,:,0:1]
+    outdict['t_pos']  =  truth[:,:,:,1:3]/16.
+    outdict['t_ID']   =  truth[:,:,:,3:6]
+    outdict['t_dim']  =  truth[:,:,:,6:8]/4.
+    outdict['t_objidx']  = truth[:,:,:,8:9]
+
+    print('pred',pred.shape)
+
+    outdict['p_beta']   =  pred[:,:,:,0:1]
+    outdict['p_pos']    =  pred[:,:,:,1:3]/16.
+    outdict['p_ID']     =  pred[:,:,:,3:6]
+    outdict['p_dim']    =  pred[:,:,:,6:8]/4.
+    #p_object  = pred[:,0,0,8]
+    outdict['p_ccoords'] = pred[:,:,:,9:]
+    
+    flattened = tf.reshape(outdict['t_mask'],(tf.shape(outdict['t_mask'])[0],-1))
+    outdict['n_nonoise'] = tf.expand_dims(tf.cast(tf.count_nonzero(flattened, axis=-1), dtype='float32'), axis=1)
+    #will have a meaning for non toy model
+    outdict['n_active'] = tf.zeros_like(outdict['n_nonoise'])+64.*64.
+    
+    
+    return outdict
+
+def make_kernel_indices(truth, kernel_size):
+    from lossKernel import makeKernelSelection
+    static_kernel = tf.constant(makeKernelSelection(64, kernel_size),dtype='int32') # P*P x 2 needs to go to B * P * P x 3
+    
+    n_batches = tf.shape(truth)[0]
+    
+    batch_range = tf.range(0, n_batches)
+    batch_range = tf.expand_dims(batch_range, axis=1) # B x 1
+    batch_range = tf.expand_dims(batch_range, axis=1) # B x 1 x 1
+    batch_range = tf.expand_dims(batch_range, axis=1) # B x 1 x 1 x 1
+    
+    batch_kernel = tf.expand_dims(static_kernel, axis=0) # 1 x P*P x 2
+    batch_kernel = tf.tile(batch_kernel,[n_batches,1,1,1]) # B x P*P x 2
+    
+    batch_indices = tf.tile(batch_range, [1, tf.shape(batch_kernel)[1], tf.shape(batch_kernel)[2], 1 ]) # B x P*P x 1
+    
+    indices = tf.concat([batch_indices, batch_kernel], axis=-1)
+
+    return indices
+
+
+def kernel_euclidean_squared(a,b):
+    # B x V x N x F
+    #output: B x V x N x 1
+    a = a[:,:,0:1,:] # B x V x 1 x F
+    return tf.expand_dims(tf.reduce_sum((a-b)**2 , axis=-1), axis=3)
+
+
+def potential_kernel(truth,pred,minimum_confidence):
+    
+    kernel_size = 3
+    
+    indices = make_kernel_indices(truth, kernel_size)
+    
+    t_kernel = tf.gather_nd(truth,indices)
+    p_kernel = tf.gather_nd(pred,indices)
+    
+    d = create_kernel_loss_dict(t_kernel,p_kernel)
+    
+    beta_scaling = 1./(( 1. - d['p_beta'])+K.epsilon()) - 1. + minimum_confidence
+
+    beta_scaling = tf.Print(beta_scaling,[ tf.shape(beta_scaling)],'beta_scaling ',summarize=100)
+    
+    dist = tf.sqrt(kernel_euclidean_squared(d['p_ccoords'], d['p_ccoords'])+K.epsilon())
+    S    = kernel_euclidean_squared(d['t_objidx'], d['t_objidx'])
+    S    = tf.where(S<0.01, tf.zeros_like(S), tf.zeros_like(S)+1.)
+    Snot = 1. - S
+    
+    #dist = tf.Print(dist,[ tf.shape(dist)],'dist ',summarize=100)
+    
+    N_nonoise = tf.cast(tf.count_nonzero(d['t_mask'],axis=2), dtype='float32')
+    
+    #N_nonoise = tf.Print(N_nonoise,[ N_nonoise],'N_nonoise ',summarize=2000)
+    
+    S *= d['t_mask']
+    Snot *= d['t_mask']
+    
+    #p_beta_kernel  = tf.expand_dims(d['p_beta'], axis = 2) # B x V X 1 x N x 1
+    #p_beta_kernel *= tf.expand_dims(d['p_beta'], axis = 3) # B x V X N x N x 1
+      
+    r_dist = 1. - dist
+    r_dist = tf.where(r_dist < 0, tf.zeros_like(r_dist),r_dist)
+    
+    repulsion =  d['t_mask'] * beta_scaling * Snot * r_dist
+    repulsion = tf.reduce_sum(repulsion, axis=2) / (N_nonoise + K.epsilon())
+    
+    attraction = d['t_mask'] * beta_scaling * S * dist
+    attraction = tf.reduce_sum(attraction, axis=2)/ (N_nonoise + K.epsilon())
+    
+    return repulsion, attraction
+
+def mean_nvert_with_nactive(A, n_active):
+    '''
+    n_active: B x 1
+    A : B x V x F
+    
+    out: B x F
+    '''
+    assert len(A.shape) == 3
+    assert len(n_active.shape) == 2
+    den = n_active + K.epsilon()
+    ssum = tf.reduce_sum(A, axis=1)
+    return ssum / den
+
+def kernel_loss(truth,pred):
+    
+    minimum_confidence = 1e-2
+    
+    repulsion, attraction = potential_kernel(truth,pred,minimum_confidence)
+    
+    d = create_pixel_loss_dict(truth, pred)
+    
+    repulsion = tf.reduce_sum(d['t_mask']*d['p_beta'] *repulsion, axis=1)/ (d['n_nonoise']+K.epsilon()) #B x 1
+    attraction = tf.reduce_sum(d['t_mask']*d['p_beta'] *attraction, axis=1)/ (d['n_nonoise']+K.epsilon()) #B x 1
+    
+    max_beta=[]
+    asso_beta = tf.where(d['t_mask']>0.1, d['p_beta'], tf.zeros_like(d['p_beta']))
+    #for loop for minbeta part
+    for i in range(10):#maximum number of objects
+        beta_i = tf.where(tf.abs(d['t_objidx']-i)<0.1, asso_beta, tf.zeros_like(asso_beta))
+        maxbeta_i = tf.reduce_max(beta_i, axis=1) 
+        max_beta.append(maxbeta_i)
+        
+        
+    max_beta = tf.concat(max_beta,axis=1)# B x 10
+    
+    max_beta = tf.Print(max_beta,[max_beta],'max_beta ', summarize=70)
+    
+    isobj = tf.where(max_beta>0, tf.zeros_like(max_beta)+1, tf.zeros_like(max_beta))
+    N_obj = tf.cast(tf.count_nonzero(isobj, axis=1),dtype='float32')
+    
+    N_obj = tf.Print(N_obj,[N_obj],'N_obj ', summarize=70)
+    
+    mean_max_beta_pen = tf.reduce_sum( isobj*(1. - max_beta), axis=1) / (N_obj + K.epsilon()) #B x 1
+    
+    reploss, attloss, betaloss = tf.reduce_mean(repulsion), tf.reduce_mean(attraction), tf.reduce_mean(mean_max_beta_pen)
+    
+    
+    ID_strength =  1.
+    pos_strength = 1.
+    box_strength = 1.
+    
+    beta_scaling = 1./(( 1. - d['p_beta'])+K.epsilon()) - 1. + minimum_confidence #B x V x 1
+    
+    
+    ########### Actual losses for ID etc. #################
+    tID = d['t_mask']*d['t_ID']
+    tID = tf.where(tID<=0.,tf.zeros_like(tID)+10*K.epsilon(),tID)
+    tID = tf.where(tID>=1.,tf.zeros_like(tID)+1.-10*K.epsilon(),tID)
+    pID = d['t_mask']*d['p_ID']
+    pID = tf.where(pID<=0.,tf.zeros_like(pID)+10*K.epsilon(),pID)
+    pID = tf.where(pID>=1.,tf.zeros_like(pID)+1.-10*K.epsilon(),pID)
+    
+    xentr = beta_scaling * (-1.)* tf.reduce_sum(tID * tf.log(pID) ,axis=-1, keepdims=True)
+    xentr_loss = mean_nvert_with_nactive(d['t_mask']*xentr, d['n_nonoise'])
+    #xentr_loss = tf.where(tf.is_nan(xentr_loss), tf.zeros_like(xentr_loss)+10., xentr_loss)
+    xentr_loss = ID_strength * tf.reduce_mean(xentr_loss)
+   
+   
+    ######### position loss
+
+
+    posl = pos_strength  * beta_scaling*tf.abs(d['t_pos'] - d['p_pos'])
+
+    posl = mean_nvert_with_nactive(d['t_mask']*posl,d['n_nonoise'])
+    #posl = tf.where(tf.is_nan(posl), tf.zeros_like(posl)+10., posl)
+    posl = tf.reduce_mean( posl)
+    
+    ######### bounding box loss
+    
+    
+    bboxl = box_strength * beta_scaling*tf.abs(d['t_dim'] - d['p_dim'])
+    bboxl = mean_nvert_with_nactive(d['t_mask']*bboxl,d['n_nonoise'])
+    #bboxl = tf.where(tf.is_nan(bboxl), tf.zeros_like(bboxl)+10., bboxl)
+    bboxl = tf.reduce_mean( bboxl)
+    
+    
+    #######################################################
+    
+    
+    supress_noise_loss = mean_nvert_with_nactive(((1.-d['t_mask'])*d['p_beta']), 
+                                            tf.abs(d['n_active']-d['n_nonoise']))
+    
+    loss = betaloss + supress_noise_loss + bboxl  + xentr_loss + posl # 
+    loss += reploss + attloss 
+    
+    loss = tf.Print(loss,[loss,
+                              reploss,
+                              attloss,
+                              betaloss,
+                              supress_noise_loss,
+                              posl,
+                              bboxl,
+                              xentr_loss
+                              ],
+                              'loss, repulsion_loss, attraction_loss, min_beta_loss, supress_noise_loss, pos_loss, bboxl, xentr_loss  ' )
+    return loss
 
 
 def d_euclidean_squared(a,b):
@@ -76,18 +295,6 @@ def expand_by_mult(A):
     A =  A1 * A2 # B x V X V x 1
     return A
 
-def mean_nvert_with_nactive(A, n_active):
-    '''
-    n_active: B x 1
-    A : B x V x F
-    
-    out: B x F
-    '''
-    assert len(A.shape) == 3
-    assert len(n_active.shape) == 2
-    den = n_active + K.epsilon()
-    ssum = tf.reduce_sum(A, axis=1)
-    return ssum / den
 
 
 def matrix_mean_nvert_with_nactive(AM, n_active):
@@ -292,18 +499,5 @@ def mean_with_mask(n_vertices,in_vertices, axis, addepsilon=0.):
 
 
 def convolutional_kernel_beta_loss(truth,pred):
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    pass
 

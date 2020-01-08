@@ -22,10 +22,11 @@ def makeKernelSelection(npixels=64,kernel_size=5):
             j_kernel = np.where(j_kernel <0 , np.zeros_like(j_kernel), j_kernel)
             j_kernel = np.where(j_kernel >=npixels , np.zeros_like(j_kernel)+npixels-1, j_kernel)
             
+            vertlist=[]
             for i_k in i_kernel:
                 for j_k in j_kernel:
-                    sel.append([i_k, j_k])
-            
+                    vertlist.append([i_k, j_k])
+            sel.append(vertlist)
         
     return np.array(sel, dtype=np.int64)
     

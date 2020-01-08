@@ -23,6 +23,8 @@ class TrainData_toy(TrainData):
         
         feature_array, trutharray = create_images(3000,npixel=64,seed=seed)
         print('created', len(feature_array),' samples ')
+        
+        
         return [feature_array] , [trutharray], []
 
 
