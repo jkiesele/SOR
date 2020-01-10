@@ -21,7 +21,7 @@ class TrainData_toy(TrainData):
         if not istraining:
             seed = 100
         
-        feature_array, trutharray = create_images(3000,npixel=64,seed=seed)
+        feature_array, trutharray = create_images(9000,npixel=64,seed=seed)
         print('created', len(feature_array),' samples ')
         
         

@@ -632,9 +632,11 @@ class plot_pixel_2D_clustering_during_training(plot_pixel_1D_clustering_during_t
         colours = feat[:,0:3]
         colours /= np.expand_dims(colours.max(axis=-1),axis=1)
         
-        ccorrdsx = pred[:,9]
-        ccorrdsy = pred[:,10]
+        ccorrdsx = pred[:,8]
+        ccorrdsy = pred[:,9]
         betas = pred[:,0] #+ 1e-3
+        
+        print('np.max(betas)',np.max(betas))
         
         mask = truth[:,0]>0
         #betamask = truth[:,0]>-.1

@@ -108,29 +108,30 @@ def addshape(image , desclist, npixel, seed=None):
         image, d = generate_shape(npixel)
         return image, image, d, True
     
-    new_image, desc = generate_shape(npixel,seed)
+    new_obj_image, desc = generate_shape(npixel,seed)
     
     #if checkobj_overlap(desclist,desc):
     #    return image, image, desc, False
     
-    shape = new_image.shape
+    shape = new_obj_image.shape
     notempty = image < 255 #only where the image was not empty before
     empty = image > 254
     
-    newpixels = new_image < 255
+    newpixels = new_obj_image < 255
     pixelstoadd = np.logical_and(newpixels, empty)
     n_objpixels = np.count_nonzero(newpixels[:,:,0])
     n_newpixels = np.count_nonzero(pixelstoadd[:,:,0])
     visible_fraction = float(n_newpixels)/float(n_objpixels)
     
-    print('n_newpixels/n_objpixels',visible_fraction)
-    
-    newobjectadded = np.where(notempty,image,new_image)
+    #print('n_newpixels/n_objpixels',visible_fraction)
+    visible_mask = np.where(pixelstoadd,np.zeros_like(image)+1,np.zeros_like(image))
+    newobjectadded = np.where(notempty,image,new_obj_image)
+    new_obj_image = np.where(visible_mask>0, new_obj_image, np.zeros_like(image)+255)
     
     if np.all(newobjectadded == image) or visible_fraction<0.1: 
         return image, image, desc, False
     
-    return newobjectadded, new_image, desc, True
+    return newobjectadded, new_obj_image, desc, True
 
 
 def create_images(nimages = 1000, npixel=64, seed=None):
@@ -169,7 +170,7 @@ def create_images(nimages = 1000, npixel=64, seed=None):
         i=0
         itcounter=0
         while i < nobjects:
-            print('e,i',e,i)
+            #print('e,i',e,i)
             itcounter+=1
             new_image, obj, des, addswitch = addshape(image,indivdesc, npixel=npixel, seed=seed)
             if addswitch:
@@ -183,10 +184,12 @@ def create_images(nimages = 1000, npixel=64, seed=None):
                     rec=makeRectangle([w,h], [x,y], image)
                     ax.add_patch(rec)
                     fig.savefig("image"+str(e)+"_"+str(i)+".png")
+                    ax.imshow(ptruth[:,:,0]+10*ptruth[:,:,1])
+                    fig.savefig("image"+str(e)+"_"+str(i)+"_t.png")
                     plt.close()
                 i+=1
             else:
-                print("skip "+str(e)," ", str(i))
+                pass #print("skip "+str(e)," ", str(i))
             if itcounter>100: #safety against endless loops for weird object combinations
                 break
                 

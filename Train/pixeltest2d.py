@@ -12,7 +12,7 @@ from DeepJetCore.training.training_base import training_base
 from DeepJetCore.DataCollection import DataCollection
 import keras
 from keras.models import Model
-from keras.layers import  Reshape, Dense,Conv1D, Conv2D, BatchNormalization, Multiply, Concatenate #etc
+from keras.layers import  Reshape, Dense,Conv1D, Conv2D, BatchNormalization, Multiply, Concatenate, Dropout #etc
 from Layers import Conv2DGlobalExchange
 from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures, Print
 
@@ -20,24 +20,32 @@ from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_
 import tensorflow as tf
 import os
 
-from Losses import kernel_loss
+from Losses import per_object_rep_att_loss
 
-nbatch=3 * 7 #1*7
+nbatch=200 #1*7
 
-plots_after_n_batch=1000
+plots_after_n_batch=50 #1000
 use_event=8
-learningrate=1e-4
+learningrate=3e-4 #-4
 
 momentum=0.6
 
 def model(Inputs,feature_dropout=-1.):
 
     x = Inputs[0] #this is the self.x list from the TrainData data structure
-    x = BatchNormalization(momentum=momentum)(x)
-    
+    x_in = BatchNormalization(momentum=momentum)(x)
+    x = x_in
     for i in range(8):
-        x = Conv2D(32, (8,8), padding='same', activation='elu')(x)
-        x = BatchNormalization(momentum=momentum)(x)
+        x = Conv2DGlobalExchange()(x)  
+        if i:
+            x = BatchNormalization(momentum=momentum)(x)  
+            x = Concatenate()([x,x_in])
+        if i and not i % 2:
+            x = Dropout(0.05)(x)
+        x = Conv2D(32+i, (3+i,3+i), padding='same', activation='elu')(x)
+    
+    #x = Dropout(0.05)(x)
+    x = Dense(64, activation='elu')(x)
     
     '''
     p_beta   =  tf.reshape(pred[:,:,:,0:1], [pred.shape[0],pred.shape[1]*pred.shape[2],-1])
@@ -56,14 +64,14 @@ def model(Inputs,feature_dropout=-1.):
     p_tpos    = Conv2D(2, (1,1), padding='same')(x)
     p_ID      = Conv2D(3, (1,1), padding='same',activation='softmax')(x)
     p_dim     = Conv2D(2, (1,1), padding='same')(x)
-    p_object  = Conv2D(1, (1,1), padding='same')(x)
+    #p_object  = Conv2D(1, (1,1), padding='same')(x)
     p_ccoords = Conv2D(2, (1,1), padding='same')(x)
     
     predictions=Concatenate()([p_beta ,  
                                p_tpos   ,
                                p_ID     ,
                                p_dim    ,
-                               p_object ,
+                               #p_object ,
                                p_ccoords])
     
     print('predictions',predictions.shape)
@@ -79,53 +87,61 @@ os.system('cp /afs/cern.ch/work/j/jkiesele/HGCal/SOR/modules/betaLosses.py '+tra
 
 from tools import plot_pixel_2D_clustering_during_training
 
-#ppdts= [ plot_pixel_clustering_during_training(
-#               samplefile="/afs/cern.ch/user/j/jkiesele/Cernbox/HGCal/BetaToys/train/100.djctd",
-#               output_file=train.outputDir+'/train_progress',
-#               use_event=use_event,
-#               x_index = None,
-#               y_index = 1,
-#               z_index = 2,
-#               e_index = 0,
-#               pred_fraction_end = 3,
-#               transformed_x_index = 0,
-#               transformed_y_index = 1,
-#               transformed_z_index = None,
-#               transformed_e_index = None,
-#               cut_z='pos',
-#               afternbatches=plots_after_n_batch,
-#               on_epoch_end=False,
-#               decay_function=None
-#               )  ] #only first and last
-#
-samplepath = "/afs/cern.ch/user/j/jkiesele/Cernbox/HGCal/BetaToys/DJC2/test/"
+samplepath = "/data/hgcal-0/store/jkiesele/SOR/Dataset/test/"
 
 ppdts = []
-#ppdts= [ plot_pixel_2D_clustering_during_training(
-#               samplefile=samplepath+"/1.djctd",
-#               output_file=train.outputDir+'/train_progress0',
-#               use_event=use_event,
-#               afternbatches=plots_after_n_batch,
-#               on_epoch_end=False,
-#               mask=False
-#               ),
-#    plot_pixel_2D_clustering_during_training(
-#               samplefile=samplepath+"1.djctd",
-#               output_file=train.outputDir+'/train_progress0_bt',
-#               use_event=use_event,
-#               afternbatches=plots_after_n_batch,
-#               on_epoch_end=False,
-#               mask=False,
-#               beta_threshold=0.85
-#               ),
-#    plot_pixel_2D_clustering_during_training(
-#               samplefile=samplepath+"1.djctd",
-#               output_file=train.outputDir+'/train_progress2',
-#               use_event=use_event+2,
-#               afternbatches=plots_after_n_batch,
-#               on_epoch_end=False,
-#               mask=False
-#               )  ] #only first and last
+ppdts= [ plot_pixel_2D_clustering_during_training(
+               samplefile=samplepath+"/1.djctd",
+               output_file=train.outputDir+'/train_progress0',
+               use_event=use_event,
+               afternbatches=plots_after_n_batch,
+               on_epoch_end=False,
+               mask=False
+               ),
+    plot_pixel_2D_clustering_during_training(
+               samplefile=samplepath+"1.djctd",
+               output_file=train.outputDir+'/train_progress0_bt',
+               use_event=use_event,
+               afternbatches=plots_after_n_batch,
+               on_epoch_end=False,
+               mask=False,
+               beta_threshold=0.5
+               ),
+    plot_pixel_2D_clustering_during_training(
+               samplefile=samplepath+"1.djctd",
+               output_file=train.outputDir+'/train_progress2',
+               use_event=use_event+1,
+               afternbatches=plots_after_n_batch,
+               on_epoch_end=False,
+               mask=False
+               ),
+    plot_pixel_2D_clustering_during_training(
+               samplefile=samplepath+"1.djctd",
+               output_file=train.outputDir+'/train_progress3',
+               use_event=use_event+2,
+               afternbatches=plots_after_n_batch,
+               on_epoch_end=False,
+               mask=False,
+               #beta_threshold=0.5
+               ),
+    plot_pixel_2D_clustering_during_training(
+               samplefile=samplepath+"1.djctd",
+               output_file=train.outputDir+'/train_progress4',
+               use_event=use_event+3,
+               afternbatches=plots_after_n_batch,
+               on_epoch_end=False,
+               mask=False,
+               #beta_threshold=0.5
+               ),
+    plot_pixel_2D_clustering_during_training(
+               samplefile=samplepath+"1.djctd",
+               output_file=train.outputDir+'/train_progress5',
+               use_event=use_event+4,
+               afternbatches=plots_after_n_batch,
+               on_epoch_end=False,
+               mask=False,
+               #beta_threshold=0.5
+               ),  ] #only first and last
 
 
 from Losses import beta_coord_loss
@@ -144,18 +160,19 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     
     #for regression use a different loss, e.g. mean_squared_error
 train.compileModel(learningrate=learningrate,
-                   loss=kernel_loss,
+                   loss=per_object_rep_att_loss,
+                   #clipnorm=1
                    )#metrics=[pixel_over_threshold_accuracy]) 
                   
 print(train.keras_model.summary())
 
 
-ppdts_callbacks=None #[ppdts[i].callback for i in range(len(ppdts))]
+ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
 verbosity=2
 
 model,history = train.trainModel(nepochs=1, 
-                                 batchsize=nbatch,
+                                 batchsize=int(nbatch),
                                  checkperiod=10, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
                                  additional_callbacks=ppdts_callbacks)

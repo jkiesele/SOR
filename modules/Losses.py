@@ -23,3 +23,8 @@ def kernel_loss(truth,pred):
     from betaLosses import kernel_loss
     return kernel_loss(truth,pred)
 global_loss_list['kernel_loss']=kernel_loss
+
+def per_object_rep_att_loss(truth,pred):
+    from betaLosses import per_object_rep_att_loss
+    return per_object_rep_att_loss(truth,pred)
+global_loss_list['per_object_rep_att_loss']=per_object_rep_att_loss
