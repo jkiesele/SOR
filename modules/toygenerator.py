@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib.patches as patches
 import numpy as np
-
+import math
+from numba import jit
 import random
 #generate one shape at a time and then add the numpy arrays only where there are zeros
 
@@ -14,6 +15,48 @@ npixel=128
 
 
 ## debug
+
+#add wiggles to an individual object
+@jit(nopython=True)      
+def addWiggles(image, background=False):
+    
+    xwiggle=random.random()+0.1#float 0, 1)
+    ywiggle=random.random()+0.1
+    colidx = random.randint(0,3)
+    
+    strength=10
+    offset=0
+    if background:
+        offset=-40
+        strength=20
+        xwiggle *= .1
+        ywiggle *= .1
+    
+    def adaptColour(col,xidx,yidx):
+        nomc=col[xidx,yidx,colidx]
+        if nomc>254 and not background: return
+        if background and nomc<255: return
+        
+        if background:
+            col[xidx,yidx,colidx] = 255+  int(offset + strength *( math.sin(float(xidx)*xwiggle) 
+                                                     + math.sin(float(yidx)*ywiggle))  )
+            if col[xidx,yidx,colidx]>255:
+                col[xidx,yidx,colidx]=255
+        else:
+            col[xidx,yidx,colidx] = nomc+  int(offset + strength *( math.sin(float(xidx)*xwiggle) 
+                                                     + math.sin(float(yidx)*ywiggle))  )
+        if col[xidx,yidx,colidx]>254 and not background:
+            col[xidx,yidx,colidx]=253
+        if col[xidx,yidx,colidx]>255 and background:
+            col[xidx,yidx,colidx]=255
+        elif col[xidx,yidx,colidx] <0:
+            col[xidx,yidx,colidx]=0
+           
+    for x in range(len(image)):
+        for y in range(len(image[x])):
+            adaptColour(image,x,y)
+            
+    return image
 
 
 def makeRectangle(size, pos, image):
@@ -95,20 +138,23 @@ def generate_shape(npixel, seed=None):
     if seed is not None:
         return skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
                                       min_size=npixel/3, max_size=npixel/2,
-                                      intensity_range=((100, 254),))
+                                      intensity_range=((100, 220),))
     else:
         return skimage.draw.random_shapes((npixel, npixel),  max_shapes=1, 
                                       min_size=npixel/3, max_size=npixel/2, # 5, 3
-                                      intensity_range=((100, 254),), random_seed=seed)
+                                      intensity_range=((100, 220),), random_seed=seed)
     
 
 #adds a shape BEHIND the existing ones
 def addshape(image , desclist, npixel, seed=None):
     if image is None:
         image, d = generate_shape(npixel)
+        image = addWiggles(image)
         return image, image, d, True
     
     new_obj_image, desc = generate_shape(npixel,seed)
+    
+    new_obj_image=addWiggles(new_obj_image)
     
     #if checkobj_overlap(desclist,desc):
     #    return image, image, desc, False
@@ -147,7 +193,8 @@ def create_images(nimages = 1000, npixel=64, seed=None):
     B x P x P x T
     with T = [mask, true_posx, true_posy, ID_0, ID_1, ID_2, true_width, true_height, n_objects]
     '''
-    debug = False
+    debug = True
+    doubledebug = False
     
     pixrange = np.arange(npixel, dtype='float32')
     pix_x = np.tile(np.expand_dims(pixrange,axis=0), [npixel,1])
@@ -176,7 +223,7 @@ def create_images(nimages = 1000, npixel=64, seed=None):
             if addswitch:
                 ptruth = createPixelTruth(des, obj, ptruth, i)
                 image = new_image
-                if debug:
+                if doubledebug:
                     fig,ax =  plt.subplots(1,1)
                     ax.imshow(image)
                     w,h = getWidthAndHeight(des)
@@ -193,6 +240,7 @@ def create_images(nimages = 1000, npixel=64, seed=None):
             if itcounter>100: #safety against endless loops for weird object combinations
                 break
                 
+        image = addWiggles(image, background=True)
         #print(image)
         if e < 100 and debug:
             plt.imshow(image)
@@ -203,6 +251,8 @@ def create_images(nimages = 1000, npixel=64, seed=None):
         mask = createMask(ptruth)
         ptruth = np.concatenate([mask,ptruth],axis=-1)
         #ptruth = addNObjects(ptruth,i)
+        
+        
         
         #ax.imshow(image)
         image = np.concatenate([image,pix_coords],axis=-1)

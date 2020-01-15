@@ -16,14 +16,14 @@ def makedict(pred,feat,truth):
     outdict['t_pos']  =  truth[:,:,:,1:3]
     outdict['t_ID']   =  truth[:,:,:,3:6]
     outdict['t_dim']  =  truth[:,:,:,6:8]
-    n_objects = truth[:,0,0,8]
+    #n_objects = truth[:,0,0,8]
 
     outdict['p_beta']   =  pred[:,:,:,0:1]
     outdict['p_pos']    =  pred[:,:,:,1:3]
     outdict['p_ID']     =  pred[:,:,:,3:6]
     outdict['p_dim']    =  pred[:,:,:,6:8]
     
-    outdict['p_ccoords'] = pred[:,:,:,9:]
+    outdict['p_ccoords'] = pred[:,:,:,8:]
     
     
     outdict['f_rgb'] = feat[:,:,:,0:3]
@@ -100,6 +100,8 @@ args = parser.parse_args()
 #use traindata as data storage
 td = TrainData()
 td.readFromFile(args.inputFile)
+
+td.x = td.transferFeatureListToNumpy()
 
 data = makedict(td.x[0],td.x[1],td.x[2])
 

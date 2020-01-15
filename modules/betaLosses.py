@@ -256,7 +256,7 @@ def sup_noise_loss(d):
 def per_object_rep_att_loss(truth,pred):
     
     d = create_pixel_loss_dict(truth,pred)
-    beta_scaling = calulate_beta_scaling(d,minimum_confidence=1e-3)
+    beta_scaling = calulate_beta_scaling(d,minimum_confidence=1e-2)
     betaloss, isobj_in, N_obj_in = min_beta_pen(d, return_objmask=True)
     
     att = []
@@ -265,7 +265,7 @@ def per_object_rep_att_loss(truth,pred):
     isobj =[]
     
     
-    maxobjs=4
+    maxobjs=9
     
     
     N_obj = tf.where(N_obj_in>maxobjs, tf.zeros_like(N_obj_in)+maxobjs, N_obj_in)
@@ -334,12 +334,15 @@ def per_object_rep_att_loss(truth,pred):
     repulsion  /= N_obj + K.epsilon()
     reploss = tf.reduce_mean(repulsion)
     
+    #sets in at beta = 0.5
+    beta_scaling = tf.where(beta_scaling>1, beta_scaling-1., tf.zeros_like(beta_scaling))
+    
     xentr_loss = cross_entr_loss(d, beta_scaling)
     posl = pos_loss(d, beta_scaling)
     bboxl = box_loss(d, beta_scaling)
     supress_noise_loss = sup_noise_loss(d)
     
-    loss = reploss + attloss + betaloss + supress_noise_loss # + posl + bboxl + xentr_loss
+    loss = reploss + attloss + betaloss + supress_noise_loss  + posl + bboxl + xentr_loss
     
     loss = tf.Print(loss,[loss,
                               reploss,

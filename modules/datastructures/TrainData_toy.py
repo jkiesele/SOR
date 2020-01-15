@@ -48,7 +48,7 @@ class TrainData_toy(TrainData):
         from DeepJetCore.TrainData import TrainData
         #use traindata as data storage
         td = TrainData()
-        td.x = [parr, farr, tarr]
+        td._store([parr, farr, tarr],[],[])
         td.writeToFile(outfilename)
     
     
