@@ -22,11 +22,11 @@ import os
 
 from Losses import per_object_rep_att_loss
 
-nbatch=200 #1*7
+nbatch=120 #1*7
 
-plots_after_n_batch=50 #1000
+plots_after_n_batch=1 #1000
 use_event=8
-learningrate=3e-4 #-4
+learningrate=1e-4 #-4
 
 momentum=0.6
 
@@ -34,17 +34,24 @@ def model(Inputs,feature_dropout=-1.):
 
     x = Inputs[0] #this is the self.x list from the TrainData data structure
     x_in = BatchNormalization(momentum=momentum)(x)
-    x = x_in
-    for i in range(8):
-        x = Conv2DGlobalExchange()(x)  
-        if i:
-            x = BatchNormalization(momentum=momentum)(x)  
-            x = Concatenate()([x,x_in])
+    
+    feat = []
+    for i in range(10):
+        x = BatchNormalization(momentum=momentum)(x)  
+        if False and not i%2:
+            x = Conv2DGlobalExchange()(x)  
         if i and not i % 2:
             x = Dropout(0.05)(x)
-        x = Conv2D(32+i, (3+i,3+i), padding='same', activation='elu')(x)
+        x = Concatenate()([x,x_in])
+        x = Conv2D(32+i, (3+2*i,3+2*i), padding='same', activation='elu')(x)
+        #x_b = Conv2D(4, (24,24), padding='same', activation='elu')(x)
+        #x = Concatenate()([x_a,x_b])
+        #feat.append(Conv2D(16, (1,1), padding='same', activation='elu')(x))
     
+    #feat=[x]
     #x = Dropout(0.05)(x)
+    #x = Concatenate()(feat)
+    
     x = Dense(64, activation='elu')(x)
     
     '''
@@ -85,66 +92,34 @@ train=training_base(testrun=False,resumeSilently=True,renewtokens=True)
 import os
 os.system('cp /afs/cern.ch/work/j/jkiesele/HGCal/SOR/modules/betaLosses.py '+train.outputDir+'/')
 
-from tools import plot_pixel_2D_clustering_during_training
+from tools import plot_pixel_2D_clustering_flat_during_training as plot_pixel_2D_clustering_during_training
 
-samplepath = "/data/hgcal-0/store/jkiesele/SOR/Dataset/test/"
+#samplepath = "/data/hgcal-0/store/jkiesele/SOR/Dataset/test_wiggle/100.djctd"
+samplepath = "/data/hgcal-0/store/jkiesele/SOR/Dataset/test/1.djctd"
 
-ppdts = []
-ppdts= [ plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"/1.djctd",
-               output_file=train.outputDir+'/train_progress0',
-               use_event=use_event,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False
-               ),
-    plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"1.djctd",
-               output_file=train.outputDir+'/train_progress0_bt',
-               use_event=use_event,
+
+def decay_function(ncalls):
+    print('call decay')
+    if ncalls > 10000:
+        return 500
+    if ncalls > 1000:
+        return 50
+    if ncalls > 100:
+        return 3
+    return 1
+
+
+ppdts= [plot_pixel_2D_clustering_during_training(
+               samplefile=samplepath,
+               output_file=train.outputDir+'/train_progress'+str(i),
+               use_event=use_event+i,
                afternbatches=plots_after_n_batch,
                on_epoch_end=False,
                mask=False,
-               beta_threshold=0.5
-               ),
-    plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"1.djctd",
-               output_file=train.outputDir+'/train_progress2',
-               use_event=use_event+1,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False
-               ),
-    plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"1.djctd",
-               output_file=train.outputDir+'/train_progress3',
-               use_event=use_event+2,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False,
-               #beta_threshold=0.5
-               ),
-    plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"1.djctd",
-               output_file=train.outputDir+'/train_progress4',
-               use_event=use_event+3,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False,
-               #beta_threshold=0.5
-               ),
-    plot_pixel_2D_clustering_during_training(
-               samplefile=samplepath+"1.djctd",
-               output_file=train.outputDir+'/train_progress5',
-               use_event=use_event+4,
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               mask=False,
-               #beta_threshold=0.5
-               ),  ] #only first and last
+               decay_function=decay_function
+               ) for i in range(10) ]
 
-
-from Losses import beta_coord_loss
+from Losses import object_condensation_loss
 
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
@@ -160,7 +135,7 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     
     #for regression use a different loss, e.g. mean_squared_error
 train.compileModel(learningrate=learningrate,
-                   loss=per_object_rep_att_loss,
+                   loss=object_condensation_loss,
                    #clipnorm=1
                    )#metrics=[pixel_over_threshold_accuracy]) 
                   

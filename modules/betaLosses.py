@@ -16,7 +16,13 @@ import keras.backend as K
 #
 
 def calulate_beta_scaling(d,minimum_confidence):
-    return (1./(( 1. - d['p_beta'])+K.epsilon()) - 1. + minimum_confidence)
+    return (1./(( 1. - d['p_beta'])+K.epsilon()) - 1.)**2 + minimum_confidence
+
+
+def calulate_payload_beta_scaling(d, onset=0.5):
+    beta_m_onset = tf.where(d['p_beta']>onset,d['p_beta']-onset,tf.zeros_like(d['p_beta']))
+    beta_squeezed = (beta_m_onset)/(1-onset)
+    return (1./(( 1. - beta_squeezed)+K.epsilon()) - 1.)**2
 
 def create_pixel_loss_dict(truth, pred):
     '''
@@ -56,6 +62,7 @@ def create_pixel_loss_dict(truth, pred):
     outdict['n_nonoise'] = tf.expand_dims(tf.cast(tf.count_nonzero(flattened, axis=-1), dtype='float32'), axis=1)
     #will have a meaning for non toy model
     outdict['n_active'] = tf.zeros_like(outdict['n_nonoise'])+64.*64.
+    outdict['n_noise'] = 64.*64.-outdict['n_nonoise']
     
     
     return outdict
@@ -233,21 +240,27 @@ def cross_entr_loss(d, beta_scaling):
     pID = tf.where(pID>=1.,tf.zeros_like(pID)+1.-10*K.epsilon(),pID)
     
     xentr = beta_scaling * (-1.)* tf.reduce_sum(tID * tf.log(pID) ,axis=-1, keepdims=True)
+    
     xentr_loss = mean_nvert_with_nactive(d['t_mask']*xentr, d['n_nonoise'])
-    #xentr_loss = tf.where(tf.is_nan(xentr_loss), tf.zeros_like(xentr_loss)+10., xentr_loss)
+    #xentr_loss = tf.reduce_mean(tf.reduce_sum(d['t_mask']*xentr, axis = 1), axis=-1)
+    return xentr_loss
     return tf.reduce_mean(xentr_loss)
 
 def pos_loss(d, beta_scaling):
-    posl = beta_scaling*tf.abs(d['t_pos'] - d['p_pos'])
+    posl = tf.reduce_sum(beta_scaling*tf.abs(d['t_pos'] - d['p_pos']), axis=-1,keepdims=True)
+    #posl = tf.reduce_sum(posl, axis=1)
     posl = mean_nvert_with_nactive(d['t_mask']*posl,d['n_nonoise'])
     #posl = tf.where(tf.is_nan(posl), tf.zeros_like(posl)+10., posl)
-    return tf.reduce_mean( posl)
+    return posl
+    #return tf.reduce_mean( posl)
 
 def box_loss(d, beta_scaling):
-    bboxl = beta_scaling*tf.abs(d['t_dim'] - d['p_dim'])
+    bboxl = tf.reduce_sum(beta_scaling*tf.abs(d['t_dim'] - d['p_dim']), axis=-1,keepdims=True)
+    #bboxl = tf.reduce_sum(bboxl, axis=1)
     bboxl = mean_nvert_with_nactive(d['t_mask']*bboxl,d['n_nonoise'])
     #bboxl = tf.where(tf.is_nan(bboxl), tf.zeros_like(bboxl)+10., bboxl)
-    return tf.reduce_mean( bboxl)
+    return bboxl
+    #return tf.reduce_mean( bboxl)
     
 def sup_noise_loss(d):
     return tf.reduce_mean(mean_nvert_with_nactive(((1.-d['t_mask'])*d['p_beta']), 
@@ -335,11 +348,11 @@ def per_object_rep_att_loss(truth,pred):
     reploss = tf.reduce_mean(repulsion)
     
     #sets in at beta = 0.5
-    beta_scaling = tf.where(beta_scaling>1, beta_scaling-1., tf.zeros_like(beta_scaling))
+    p_beta_scaling = calulate_payload_beta_scaling(d,onset=0.8)
     
-    xentr_loss = cross_entr_loss(d, beta_scaling)
-    posl = pos_loss(d, beta_scaling)
-    bboxl = box_loss(d, beta_scaling)
+    xentr_loss = 0.1*tf.reduce_mean(cross_entr_loss(d, p_beta_scaling)/( N_obj + K.epsilon()))
+    posl       = 0.1*tf.reduce_mean(pos_loss(d, p_beta_scaling)/( N_obj + K.epsilon()))
+    bboxl      = 0.1*tf.reduce_mean(box_loss(d, p_beta_scaling)/( N_obj + K.epsilon()))
     supress_noise_loss = sup_noise_loss(d)
     
     loss = reploss + attloss + betaloss + supress_noise_loss  + posl + bboxl + xentr_loss
@@ -356,6 +369,93 @@ def per_object_rep_att_loss(truth,pred):
                               'loss, repulsion_loss, attraction_loss, min_beta_loss, supress_noise_loss, pos_loss, bboxl, xentr_loss  ' )
     
     return loss
+
+
+def calculate_charge(beta, q_min):
+    beta = tf.clip_by_value(beta,0,1-K.epsilon()) #don't let gradient go to nan
+    return tf.atanh(beta)+q_min
+
+
+
+def object_condensation_loss(truth,pred):
+    d = create_pixel_loss_dict(truth,pred)
+    
+    q = calculate_charge(d['p_beta'],1)
+    
+    L_att = tf.zeros_like(q[:,0,0])
+    L_rep = tf.zeros_like(q[:,0,0])
+    L_beta = tf.zeros_like(q[:,0,0])
+    
+    Nobj = tf.zeros_like(q[:,0,0])
+    
+    is_obj=[]
+    
+    for k in range(9):#maximum number of objects
+        
+        Mki      = tf.where(tf.abs(d['t_objidx']-float(k))<0.2, tf.zeros_like(q)+1, tf.zeros_like(q))
+        
+        print('Mki',Mki.shape)
+        
+        iobj_k   = tf.reduce_max(Mki, axis=1) # B x 1
+        Nobj += tf.squeeze(iobj_k,axis=1)
+        
+        
+        kalpha   = tf.argmax(Mki*d['t_mask']*d['p_beta'], axis=1)
+        
+        print('kalpha',kalpha.shape)
+        
+        x_kalpha = tf.gather_nd(d['p_ccoords'],kalpha,batch_dims=1)
+        x_kalpha = tf.expand_dims(x_kalpha, axis=1)
+        print('x_kalpha',x_kalpha.shape)
+        
+        q_kalpha = tf.gather_nd(q,kalpha,batch_dims=1)
+        q_kalpha = tf.expand_dims(q_kalpha, axis=1)
+        
+        distance  = tf.sqrt(tf.reduce_sum( (x_kalpha-d['p_ccoords'])**2, axis=-1 , keepdims=True)+K.epsilon()) #B x V x 1
+        F_att     = q_kalpha * q * distance**2 * Mki
+        F_rep     = q_kalpha * q * tf.nn.relu(1. - distance) * (1. - Mki)
+        
+        L_att  += tf.squeeze(iobj_k * tf.reduce_sum(F_att, axis=1), axis=1)/(4096)
+        L_rep  += tf.squeeze(iobj_k * tf.reduce_sum(F_rep, axis=1), axis=1)/(4096)
+        
+        
+        beta_kalpha = tf.gather_nd(d['p_beta'],kalpha,batch_dims=1)
+        L_beta += tf.squeeze(iobj_k * (1-beta_kalpha),axis=1)
+        
+        
+    L_beta/=Nobj
+    #L_att/=Nobj
+    #L_rep/=Nobj
+    
+    L_suppnoise = tf.squeeze(tf.reduce_sum( (1.-d['t_mask'])*d['p_beta'] , axis=1) / (d['n_noise'] + K.epsilon()), axis=1)
+    
+    reploss = tf.reduce_mean(L_rep)
+    attloss = tf.reduce_mean(L_att)
+    betaloss = tf.reduce_mean(L_beta)
+    supress_noise_loss = tf.reduce_mean(L_suppnoise)
+    
+    payload_scaling = calculate_charge(d['p_beta'],0.)
+    
+    posl = tf.reduce_mean(pos_loss(d,payload_scaling))
+    bboxl = tf.reduce_mean(box_loss(d,payload_scaling))
+    xentr_loss = tf.reduce_mean(cross_entr_loss(d,payload_scaling))
+    
+    loss = reploss + attloss + betaloss + supress_noise_loss #+ posl + bboxl + xentr_loss
+    
+    loss = tf.Print(loss,[loss,
+                              reploss,
+                              attloss,
+                              betaloss,
+                              supress_noise_loss,
+                              posl,
+                              bboxl,
+                              xentr_loss
+                              ],
+                              'loss, repulsion_loss, attraction_loss, min_beta_loss, supress_noise_loss, pos_loss, bboxl, xentr_loss  ' )
+    return loss
+    
+    
+
 
 
 def kernel_loss(truth,pred):

@@ -193,7 +193,7 @@ def create_images(nimages = 1000, npixel=64, seed=None):
     B x P x P x T
     with T = [mask, true_posx, true_posy, ID_0, ID_1, ID_2, true_width, true_height, n_objects]
     '''
-    debug = True
+    debug = False
     doubledebug = False
     
     pixrange = np.arange(npixel, dtype='float32')

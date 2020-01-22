@@ -28,3 +28,10 @@ def per_object_rep_att_loss(truth,pred):
     from betaLosses import per_object_rep_att_loss
     return per_object_rep_att_loss(truth,pred)
 global_loss_list['per_object_rep_att_loss']=per_object_rep_att_loss
+
+
+def object_condensation_loss(truth,pred):
+    from betaLosses import object_condensation_loss
+    return object_condensation_loss(truth,pred)
+global_loss_list['object_condensation_loss']=object_condensation_loss
+

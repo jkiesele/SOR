@@ -724,6 +724,131 @@ class plot_pixel_2D_clustering_during_training(plot_pixel_1D_clustering_during_t
             
             
             
+class plot_pixel_2D_clustering_flat_during_training(plot_pixel_2D_clustering_during_training):
+    def __init__(self, 
+               samplefile,
+               output_file,
+               use_event=0,
+               afternbatches=-1,
+               on_epoch_end=False,
+               mask=True,
+               beta_threshold=0.,
+               **kwargs
+                 ):
+        plot_pixel_2D_clustering_during_training.__init__(self,samplefile,output_file,use_event,
+                                           afternbatches=afternbatches,
+                                           on_epoch_end=on_epoch_end, 
+                                           mask=mask,
+                                           beta_threshold=beta_threshold,
+                                           **kwargs)
+        
+        
+        self.plotter_right = plotter_2d()
+        
+        
+    def _make_plot(self,call_counter,feat,predicted,truth):
+        self.glob_counter = call_counter
+        pred  = copy.deepcopy(predicted[0]) #not a list anymore, 0th event
+        truth = copy.deepcopy(truth[0]) # make the first epoch be the truth plot
+        feat  = copy.deepcopy(feat[0]) #not a list anymore 0th event
+        
+        '''
+        t_mask =    tf.reshape(truth[:,:,:,0:1], reshaping) 
+    true_pos =  tf.reshape(truth[:,:,:,1:3], reshaping) 
+    true_ID =   tf.reshape(truth[:,:,:,3:6], reshaping) 
+    true_dim =  tf.reshape(truth[:,:,:,6:8], reshaping) 
+    n_objects = truth[:,0,0,8]
+    # B x P x P x N
+    
+    
+    #make it all lists
+    p_beta   =  tf.reshape(pred[:,:,:,0:1], reshaping)
+    p_tpos   =  tf.reshape(pred[:,:,:,1:3], reshaping)
+    p_ID     =  tf.reshape(pred[:,:,:,3:6], reshaping)
+    p_dim    =  tf.reshape(pred[:,:,:,6:8], reshaping)
+    p_object  = pred[:,0,0,8]
+    p_ccoords = tf.reshape(pred[:,:,:,9:10], reshaping)
+        '''
+        
+        
+        if self.firstcall:
+            self.npixels = truth.shape[0]
+            self.firstcall=False
+            
+        
+        reshaping = [self.npixels*self.npixels, -1]
+        truth = np.reshape(truth, reshaping)
+        feat = np.reshape(feat, reshaping)
+        pred = np.reshape(pred, reshaping)
+        
+        colours = feat[:,0:3]
+        colours /= np.expand_dims(colours.max(axis=-1),axis=1)
+        
+        
+        ccorrdsx = pred[:,8]
+        ccorrdsy = pred[:,9]
+        betas = pred[:,0] #+ 1e-3
+        
+        
+        mask = truth[:,0]>0
+            
+        fig = plt.figure(figsize=(2*4.8, 4.8))
+        axs = [fig.add_subplot(1,2,1),
+               fig.add_subplot(1,2,2)]
+
+        for i in range(len(axs)):
+            axs[i].clear()
+            axs[i].autoscale(True)
+            axs[i].set_aspect('auto')
+            axs[i].relim() 
+            
+        
+    # plot cluster space
+        rgb_cols = colours / 1.1
+        
+        
+        betacols = np.array(betas)
+        betacols[betacols<0.05] = 0.05
+        betacols*=0.8
+        betacols+=0.2
+        
+        sorting = np.reshape(np.argsort(betacols, axis=0), [-1])
+        betacols = np.expand_dims(betacols,axis=1)
+        
+        rgbbeta_cols = np.concatenate([rgb_cols, betacols] ,axis=-1)
+            #colours[truth[:,0]==0]=0.
+        
+        axs[1].scatter(ccorrdsx[sorting],
+                  ccorrdsy[sorting],
+                  c=rgbbeta_cols[sorting])
+        
+        #add some slight alpha to the left image to indicate condensation points
+        
+        #colours*=alphas
+        #colours*=255
+        #colours = np.where(colours>255, colours-30,colours)#make background gray
+        
+        #rgbbeta_cols = np.concatenate([rgb_cols, betacols] ,axis=-1)
+        colours = rgbbeta_cols*255 #  np.concatenate([colours,alphas],axis=-1)
+        colours=np.array(colours,dtype='int64')
+        axs[0].imshow(np.reshape(colours,[64,64,-1]))
+        
+        #axs[1].set_yscale("log", nonposy='clip')
+        for i in range(len(axs)):
+            axs[i].set_aspect('auto')
+            axs[i].relim() 
+            
+        outputname = self.tmp_out_prefix+str(self.glob_counter+self.offset_counter).rjust(self.rjust, '0')+'.png'
+        fig.savefig(outputname, dpi=300)
+        fig.clear()
+        plt.close(fig)
+        plt.clf()
+        plt.cla()
+        plt.close() 
+        
+        
+        
+            
 class plot_pixel_metrics_clustering_during_training(plot_pixel_1D_clustering_during_training):
     def __init__(self, 
                samplefile,
