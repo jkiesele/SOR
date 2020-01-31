@@ -35,3 +35,12 @@ def object_condensation_loss(truth,pred):
     return object_condensation_loss(truth,pred)
 global_loss_list['object_condensation_loss']=object_condensation_loss
 
+def particle_condensation_loss(truth,pred):
+    from betaLosses import particle_condensation_loss
+    return particle_condensation_loss(truth,pred)
+global_loss_list['particle_condensation_loss']=particle_condensation_loss
+
+def dummy(truth,pred):
+    import tensorflow as tf
+    return tf.abs(tf.reduce_mean(truth)-tf.reduce_mean(pred))
+global_loss_list['dummy']=dummy

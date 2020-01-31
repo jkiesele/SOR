@@ -106,7 +106,7 @@ td.x = td.transferFeatureListToNumpy()
 data = makedict(td.x[0],td.x[1],td.x[2])
 
 
-betaselection = collectoverthresholds(data, 0.3, 0.8) #0.2/2.0
+betaselection = collectoverthresholds(data, 0.1, 0.8) #0.2/2.0
 
 print('betaselection',betaselection.shape)
 
@@ -145,7 +145,7 @@ for i in range(min(len(td.x[0]), 30)):
         these_true_positions.append((true_recspos[i][j][0],true_recspos[i][j][1]))
         
         rec = makeRectangle(true_recsdim[i][j], true_recspos[i][j] ,'r')
-        ax.add_patch(rec)
+        #ax.add_patch(rec)
     plt.tight_layout()
     fig.savefig("true_image"+str(i)+".pdf")
     
@@ -164,7 +164,7 @@ for i in range(min(len(td.x[0]), 30)):
     for j in range(len(flat_betaselection[i])):
         if flat_betaselection[i][j]:
             rec = makeRectangle(pred_recsdim[i][j], pred_recpos[i][j],'y' )
-            ax.add_patch(rec)
+            #ax.add_patch(rec)
             nrecs += 1
     print('nrecs ',nrecs)
     

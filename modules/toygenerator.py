@@ -146,15 +146,17 @@ def generate_shape(npixel, seed=None):
     
 
 #adds a shape BEHIND the existing ones
-def addshape(image , desclist, npixel, seed=None):
+def addshape(image , desclist, npixel, seed=None, addwiggles=False):
     if image is None:
         image, d = generate_shape(npixel)
-        image = addWiggles(image)
+        if addwiggles:
+            image = addWiggles(image)
         return image, image, d, True
     
     new_obj_image, desc = generate_shape(npixel,seed)
     
-    new_obj_image=addWiggles(new_obj_image)
+    if addwiggles:
+        new_obj_image=addWiggles(new_obj_image)
     
     #if checkobj_overlap(desclist,desc):
     #    return image, image, desc, False
@@ -180,7 +182,7 @@ def addshape(image , desclist, npixel, seed=None):
     return newobjectadded, new_obj_image, desc, True
 
 
-def create_images(nimages = 1000, npixel=64, seed=None):
+def create_images(nimages = 1000, npixel=64, seed=None, addwiggles=False):
 
     '''
     returns features, truth
@@ -219,7 +221,7 @@ def create_images(nimages = 1000, npixel=64, seed=None):
         while i < nobjects:
             #print('e,i',e,i)
             itcounter+=1
-            new_image, obj, des, addswitch = addshape(image,indivdesc, npixel=npixel, seed=seed)
+            new_image, obj, des, addswitch = addshape(image,indivdesc, npixel=npixel, seed=seed, addwiggles=addwiggles)
             if addswitch:
                 ptruth = createPixelTruth(des, obj, ptruth, i)
                 image = new_image
@@ -240,7 +242,8 @@ def create_images(nimages = 1000, npixel=64, seed=None):
             if itcounter>100: #safety against endless loops for weird object combinations
                 break
                 
-        image = addWiggles(image, background=True)
+        if addwiggles:
+            image = addWiggles(image, background=True)
         #print(image)
         if e < 100 and debug:
             plt.imshow(image)

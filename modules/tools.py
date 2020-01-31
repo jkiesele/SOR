@@ -8,6 +8,9 @@ import gc
 import copy
 import ctypes
 import matplotlib.pyplot as plt
+import math
+import matplotlib.cm as mplcm
+import matplotlib as mpl
 
 def make_shared(arr):
     fulldim=1
@@ -585,7 +588,6 @@ class plot_pixel_2D_clustering_during_training(plot_pixel_1D_clustering_during_t
                                            mask=mask,
                                            **kwargs)
         
-        
         self.plotter_right = plotter_3d()
         self.beta_threshold = beta_threshold
         
@@ -733,6 +735,10 @@ class plot_pixel_2D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
                on_epoch_end=False,
                mask=True,
                beta_threshold=0.,
+               ccorrdsx_idx=8,
+               ccorrdsy_idx=9,
+               cut_truth=0,
+               assoindex=-1,
                **kwargs
                  ):
         plot_pixel_2D_clustering_during_training.__init__(self,samplefile,output_file,use_event,
@@ -741,8 +747,10 @@ class plot_pixel_2D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
                                            mask=mask,
                                            beta_threshold=beta_threshold,
                                            **kwargs)
-        
-        
+        self.assoindex=assoindex
+        self.cut_truth=cut_truth
+        self.ccorrdsx_idx=ccorrdsx_idx
+        self.ccorrdsy_idx=ccorrdsy_idx
         self.plotter_right = plotter_2d()
         
         
@@ -771,22 +779,44 @@ class plot_pixel_2D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         '''
         
         
-        if self.firstcall:
-            self.npixels = truth.shape[0]
-            self.firstcall=False
+        if self.cut_truth>0:
+            truth = truth[:self.cut_truth,...]
+            pred = pred[:self.cut_truth,...]
+            feat = feat[:self.cut_truth,...]
             
+        elif self.cut_truth<0:
+            truth = truth[abs(self.cut_truth):,...]
+            pred = pred[abs(self.cut_truth):,...]
+            feat = feat[abs(self.cut_truth):,...]
+        if self.firstcall:
+            if len(truth.shape)>2:
+                self.npixels = truth.shape[0]
+            else:
+                self.npixels =int( math.sqrt(truth.shape[0]))
+            self.firstcall=False
         
         reshaping = [self.npixels*self.npixels, -1]
         truth = np.reshape(truth, reshaping)
         feat = np.reshape(feat, reshaping)
         pred = np.reshape(pred, reshaping)
         
-        colours = feat[:,0:3]
-        colours /= np.expand_dims(colours.max(axis=-1),axis=1)
+        colours=None
+        if self.assoindex>=0:
+            colours = truth[:,self.assoindex]
+            
+            norm = mpl.colors.Normalize(vmin=0, vmax=np.max(colours))
+            cmap = mplcm.jet
+            
+            m = mplcm.ScalarMappable(cmap=cmap)
+            colours = m.to_rgba(colours)
+            colours = colours[:,0:3]
+            
+        else:
+            colours = feat[:,0:3]
+            colours /= np.expand_dims(colours.max(axis=-1),axis=1)
         
-        
-        ccorrdsx = pred[:,8]
-        ccorrdsy = pred[:,9]
+        ccorrdsx = pred[:,self.ccorrdsx_idx]
+        ccorrdsy = pred[:,self.ccorrdsy_idx]
         betas = pred[:,0] #+ 1e-3
         
         
@@ -808,6 +838,7 @@ class plot_pixel_2D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         
         
         betacols = np.array(betas)
+        betacols/=np.max(betacols)#normalise
         betacols[betacols<0.05] = 0.05
         betacols*=0.8
         betacols+=0.2
@@ -831,7 +862,7 @@ class plot_pixel_2D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         #rgbbeta_cols = np.concatenate([rgb_cols, betacols] ,axis=-1)
         colours = rgbbeta_cols*255 #  np.concatenate([colours,alphas],axis=-1)
         colours=np.array(colours,dtype='int64')
-        axs[0].imshow(np.reshape(colours,[64,64,-1]))
+        axs[0].imshow(np.reshape(colours,[self.npixels,self.npixels,-1]))
         
         #axs[1].set_yscale("log", nonposy='clip')
         for i in range(len(axs)):
@@ -847,7 +878,218 @@ class plot_pixel_2D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         plt.close() 
         
         
+             
+class plot_pixel_3D_clustering_flat_during_training(plot_pixel_2D_clustering_during_training):
+    def __init__(self, 
+               samplefile,
+               output_file,
+               use_event=0,
+               afternbatches=-1,
+               on_epoch_end=False,
+               mask=True,
+               beta_threshold=0.,
+               ccorrdsx_idx=8,
+               ccorrdsy_idx=9,
+               feat_x=1,
+               feat_y=1,
+               feat_z=1,
+               cut_truth=0,
+               assoindex=-1,
+               **kwargs
+                 ):
+        plot_pixel_2D_clustering_during_training.__init__(self,samplefile,output_file,use_event,
+                                           afternbatches=afternbatches,
+                                           on_epoch_end=on_epoch_end, 
+                                           mask=mask,
+                                           beta_threshold=beta_threshold,
+                                           **kwargs)
+        self.assoindex=assoindex
+        self.cut_truth=cut_truth
+        self.ccorrdsx_idx=ccorrdsx_idx
+        self.ccorrdsy_idx=ccorrdsy_idx
+        self.plotter_right = plotter_2d()
         
+        self.feat_x=feat_x
+        self.feat_y=feat_y
+        self.feat_z=feat_z
+        
+        
+    def make_plot(self,call_counter,feat,predicted,truth):
+        
+        #clean up
+        t_alive=[]
+        for t in self.threadlist:
+            if not t.is_alive():
+                t.join()
+            else:
+                t_alive.append(t)
+        self.threadlist = t_alive  
+        
+        s_feat = feat #make_shared(feat[0])
+            
+        s_predicted = predicted[0] #make_shared(predicted[0])
+        s_truth = truth[0] #make_shared(truth[0])
+        
+        del feat,truth,predicted
+        
+        #send this directly to a fork so it does not interrupt training too much
+        p = Process(target=self._make_plot, args=(call_counter,s_feat,s_predicted,s_truth))
+        self.threadlist.append(p)
+        gcisenabled = gc.isenabled()
+        gc.disable()
+        p.start()
+        if gcisenabled:
+            gc.enable()   
+                
+    
+        
+    def _make_plot(self,call_counter,feat,predicted,truth):
+        self.glob_counter = call_counter
+        pred  = copy.deepcopy(predicted[0]) #not a list anymore, 0th event
+        truth = copy.deepcopy(truth[0]) # make the first epoch be the truth plot
+        calo_feat  = copy.deepcopy(feat[0][0]) #not a list anymore 0th event
+        track_feat = copy.deepcopy(feat[1][0])
+        calo_feat = np.reshape(calo_feat,[calo_feat.shape[0]**2,-1])
+        track_feat = np.reshape(track_feat,[track_feat.shape[0]**2,-1])
+        feat  = np.concatenate([calo_feat,track_feat ],axis=0)
+        '''
+        t_mask =    tf.reshape(truth[:,:,:,0:1], reshaping) 
+    true_pos =  tf.reshape(truth[:,:,:,1:3], reshaping) 
+    true_ID =   tf.reshape(truth[:,:,:,3:6], reshaping) 
+    true_dim =  tf.reshape(truth[:,:,:,6:8], reshaping) 
+    n_objects = truth[:,0,0,8]
+    # B x P x P x N
+    
+    
+    #make it all lists
+    p_beta   =  tf.reshape(pred[:,:,:,0:1], reshaping)
+    p_tpos   =  tf.reshape(pred[:,:,:,1:3], reshaping)
+    p_ID     =  tf.reshape(pred[:,:,:,3:6], reshaping)
+    p_dim    =  tf.reshape(pred[:,:,:,6:8], reshaping)
+    p_object  = pred[:,0,0,8]
+    p_ccoords = tf.reshape(pred[:,:,:,9:10], reshaping)
+        '''
+        
+        do_reshape=True
+        if self.cut_truth>0:
+            truth = truth[:self.cut_truth,...]
+            pred = pred[:self.cut_truth,...]
+            feat = feat[:self.cut_truth,...]
+            
+        elif self.cut_truth<0:
+            truth = truth[abs(self.cut_truth):,...]
+            pred = pred[abs(self.cut_truth):,...]
+            feat = feat[abs(self.cut_truth):,...]
+        if self.firstcall:
+            if len(truth.shape)>2:
+                self.npixels = truth.shape[0]
+            else:
+                self.npixels =int( math.sqrt(truth.shape[0]))
+                do_reshape=False
+            self.firstcall=False
+        
+        if do_reshape:
+            reshaping = [self.npixels*self.npixels, -1]
+            truth = np.reshape(truth, reshaping)
+            feat = np.reshape(feat, reshaping)
+            pred = np.reshape(pred, reshaping)
+        
+        
+        colours=None
+        if self.assoindex>=0:
+            colours = truth[:,self.assoindex]
+            
+            norm = mpl.colors.Normalize(vmin=0, vmax=np.max(colours))
+            cmap = mplcm.jet
+            
+            m = mplcm.ScalarMappable(cmap=cmap)
+            colours = m.to_rgba(colours)
+            colours = colours[:,0:3]
+            
+        else:
+            colours = feat[:,0:3]
+            colours /= np.expand_dims(colours.max(axis=-1),axis=1)
+        
+        ccorrdsx = pred[:,self.ccorrdsx_idx]
+        ccorrdsy = pred[:,self.ccorrdsy_idx]
+        betas = pred[:,0] #+ 1e-3
+        
+        
+        mask = truth[:,0]>0
+            
+        fig = plt.figure(figsize=(2*4.8, 4.8))
+        axs = [fig.add_subplot(1,2,1, projection='3d'),
+               fig.add_subplot(1,2,2)]
+
+        for i in range(len(axs)):
+            axs[i].clear()
+            axs[i].autoscale(True)
+            axs[i].set_aspect('auto')
+            axs[i].relim() 
+            
+        
+        energy = feat[:,0]
+        #use default size and change sigtly
+        size_scaling = mpl.rcParams['lines.markersize']**2 * (0.5+ np.log(energy+1))
+        
+    # plot cluster space
+        rgb_cols = colours / 1.1
+        
+        
+        betacols = np.array(betas)
+        betacols/=np.max(betacols)#normalise
+        betacols[betacols<0.05] = 0.05
+        betacols*=0.8
+        betacols+=0.2
+        
+        sorting = np.reshape(np.argsort(betacols, axis=0), [-1])
+        betacols = np.expand_dims(betacols,axis=1)
+        
+        rgbbeta_cols = np.concatenate([rgb_cols, betacols] ,axis=-1)
+            #colours[truth[:,0]==0]=0.
+        
+        axs[1].scatter(ccorrdsx[sorting],
+                  ccorrdsy[sorting],
+                  c=rgbbeta_cols[sorting],
+                  s=size_scaling[sorting])
+        
+        #add some slight alpha to the left image to indicate condensation points
+        
+        #colours*=alphas
+        #colours*=255
+        #colours = np.where(colours>255, colours-30,colours)#make background gray
+        
+        #rgbbeta_cols = np.concatenate([rgb_cols, betacols] ,axis=-1)
+        colours = rgbbeta_cols*255 #  np.concatenate([colours,alphas],axis=-1)
+        colours=np.array(colours,dtype='int64')
+        
+        axs[0].scatter(
+                  feat[:,self.feat_x][sorting],
+                  feat[:,self.feat_y][sorting],
+                  feat[:,self.feat_z][sorting],
+                  c=rgbbeta_cols[sorting],
+                  s=size_scaling[sorting])
+        
+        #axs[1].set_yscale("log", nonposy='clip')
+        for i in range(len(axs)):
+            axs[i].set_aspect('auto')
+            axs[i].relim() 
+        
+        angle = self.glob_counter+30
+        while angle> 360 : 
+            angle-=360
+        axs[0].view_init(30, angle)
+            
+        outputname = self.tmp_out_prefix+str(self.glob_counter+self.offset_counter).rjust(self.rjust, '0')+'.png'
+        fig.savefig(outputname, dpi=300)
+        fig.clear()
+        plt.close(fig)
+        plt.clf()
+        plt.cla()
+        plt.close() 
+        
+        
+       
             
 class plot_pixel_metrics_clustering_during_training(plot_pixel_1D_clustering_during_training):
     def __init__(self, 
