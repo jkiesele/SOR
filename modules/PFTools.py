@@ -21,6 +21,7 @@ import math
 E_seed = 0.230
 E_cell = 0.080
 sigma = 15 #(everything mm)
+cellsize = 22 #(everything mm)
 
 class calo_cluster(object):
     def __init__(self,energy,pos,true_energy=-1,true_pos=[-1000,-1000]):
@@ -53,8 +54,40 @@ class pf_track(object):
         self.energy=energy
         self.position=pos
         
-    def rel_resolution(self,pt):
+    def rel_resolution(self):
+        pt=self.energy
         return (pt/100.)*(pt/100.)*0.04 +0.01;
+
+
+class pfCandidate(calo_cluster):
+    def __init__(self,energy=-1,pos=[0.,0.]):
+        calo_cluster.__init__(self,energy,pos)
+        
+    
+    def create_from_link(self, calocluster, pftrack=None):
+        if pftrack is None:
+            self.energy=calocluster.energy
+            self.position=calocluster.position
+            return None
+        else: #use a weighted mean
+            
+            self.position = pftrack.position
+            
+            t = pftrack.energy
+            dt = pftrack.rel_resolution()
+            c = calocluster.energy
+            dc = calocluster.rel_resolution()
+            
+            if abs(t-c) > math.sqrt((c*dc)**2+(t*dt)**2): #incompatible, create second pf candidate
+                self.energy = t #use track momentum
+                neutral_cand = pfCandidate(c-t, calocluster.position)
+                if c-t > 0.5:
+                    return neutral_cand
+                
+            self.energy = 1/((t*dt)**(-2) + (c*dc)**(-2)) * (c/(c*dc)**2 +t/(t*dt)**2)
+            
+            return None
+        
 
 
 @jit(nopython=True)     
@@ -200,7 +233,7 @@ def calo_determineClusters(caloinput, seedidxs):#calo input per event: x X y X F
         mu = new_mu
         f = calo_calc_f(A, c, mu)
         counter+=1
-    print(counter)
+    #print(counter)
     A = calo_calc_A(f,E)
     
     out=[]
@@ -235,10 +268,58 @@ def match_cluster_to_truth(clusters, true_pos, true_en):
     truth_used = np.zeros_like(true_en, dtype='int64')
     return c_match_cluster_to_truth(clusters, true_pos, true_en, truth_used)
     
+    
+def create_pf_tracks(tracks):
+    #input tracks[event,:,:,:] 0: energy, 1,2 pos
+    out_tracks = []
+    intracks = np.reshape(tracks, [-1,tracks.shape[-1]])
+    for i_t in range(len(intracks)):
+        if intracks[i_t][0] < 1: continue
+        out_tracks.append(pf_track(intracks[i_t][0],intracks[i_t,1:3]))
+    return out_tracks
 
-
+@jit(nopython=True)  
+def c_perform_linking(cluster_positions, track_positions):
+    
+    matching=[] #i_cluster, i_track
+    for i_c in range(len(cluster_positions)):
+        best_distancesq = 1e3
+        best_track = -1
+        for i_t in range(len(track_positions)):
+            distsq = (cluster_positions[i_c][0]-track_positions[i_t][0])**2 + (cluster_positions[i_c][1]-track_positions[i_t][1])**2
+            if distsq > cellsize: continue
+            if best_distancesq < distsq: continue
+            best_track = i_t
+            best_distancesq = distsq
+        matching.append([i_c, best_track])
+        
+    return matching
+    
+#works on an event by event basis
+#clusters are calo_cluster objects, tracks are pf_track objects
+#returns list of candidates directly
 def perform_linking(clusters, tracks):
-    valid_tracks = tracks[tracks[:,:,0]>0.1]#just cut on energy
+    
+    cluster_positions = np.array([c.position for c in clusters])
+    track_positions = np.array([t.position for t in tracks])
+    matching = c_perform_linking(cluster_positions, track_positions)
+    
+    particles = []
+    for m in matching:
+        pfc = pfCandidate()
+        cand2=None
+        if m[1]>=0:
+            cand2 = pfc.create_from_link(clusters[m[0]], tracks[m[1]])
+        else:
+            pfc.create_from_link(clusters[m[0]])
+            
+        particles.append(pfc)
+        if cand2 is not None:
+            particles.append(cand2)
+            
+    return particles
+    
+    
     
     
     

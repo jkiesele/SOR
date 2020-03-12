@@ -6,7 +6,7 @@ import numpy as np
 from DeepJetCore.TrainData import TrainData
 from argparse import ArgumentParser
 
-from evaluation_tools import find_best_matching_truth_and_format
+from evaluation_tools import find_best_matching_truth_and_format, write_output_tree
 from inference import make_particle_inference_dict,  collect_condensates
 
 parser = ArgumentParser('Selects condensates and puts output into root file')
@@ -46,7 +46,6 @@ with open(args.inputFile) as file:
             ev_truth = truth[event]
             
             eventparticles = find_best_matching_truth_and_format(ev_pred_pos, ev_pred_E, ev_truth, pos_tresh=2*22.)
-            
             allparticles.append(eventparticles)
     
     
@@ -60,9 +59,8 @@ print('fake: ', float(np.count_nonzero( allparticles[:,0] *  (1.-allparticles[:,
 
 
 np.save(args.outputFile+".npy", allparticles)
-from root_numpy import array2root
-out = np.core.records.fromarrays(allparticles.transpose() ,names="is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id")
-array2root(out, args.outputFile+".root", 'tree')
+write_output_tree(allparticles, args.outputFile+".root")
+
 
 
 

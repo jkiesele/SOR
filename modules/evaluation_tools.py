@@ -195,8 +195,10 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.)
    
     
     
-    
-    
+def write_output_tree(allparticles, outputFile):
+    from root_numpy import array2root
+    out = np.core.records.fromarrays(allparticles.transpose() ,names="is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id")
+    array2root(out, outputFile+".root", 'tree')    
     
     
     

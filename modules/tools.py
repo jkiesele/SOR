@@ -155,8 +155,8 @@ def make_particle_resolution_plots(feat,predicted,truth,outfile):
     axs = [fig.add_subplot(2,1,1),
             fig.add_subplot(2,1,2)]
     
-    axs[0].hist(E_resolution,bins=31, range=[0.85,1.15])
-    axs[1].hist2d(sel_E_true,E_resolution,bins=21, range=[[0,200],[0.7,1.3]])
+    axs[0].hist(E_resolution,bins=29, range=[0.93,1.07])
+    axs[1].hist2d(sel_E_true,E_resolution,bins=21, range=[[0,200],[0.9,1.1]])
     
     fig.savefig(outfile, dpi=300)
     fig.clear()
