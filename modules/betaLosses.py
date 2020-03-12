@@ -5,6 +5,8 @@ import keras
 from keras import losses
 import keras.backend as K
 
+from tools import printWorkaround
+
 #factorise a bit
 
 
@@ -39,7 +41,7 @@ def create_pixel_loss_dict(truth, pred):
     
     '''
     outdict={}
-    truth = tf.Print(truth,[tf.shape(truth),tf.shape(pred)],'truth, pred ',summarize=30)
+    #truth = tf.Print(truth,[tf.shape(truth),tf.shape(pred)],'truth, pred ',summarize=30)
     def resh(lastdim):
         return (tf.shape(pred)[0],tf.shape(pred)[1]*tf.shape(pred)[2],lastdim)
     #make it all lists
@@ -59,7 +61,7 @@ def create_pixel_loss_dict(truth, pred):
     outdict['p_ccoords'] = tf.reshape(pred[:,:,:,8:10], resh(2))
     
     flattened = tf.reshape(outdict['t_mask'],(tf.shape(outdict['t_mask'])[0],-1))
-    outdict['n_nonoise'] = tf.expand_dims(tf.cast(tf.count_nonzero(flattened, axis=-1), dtype='float32'), axis=1)
+    outdict['n_nonoise'] = tf.expand_dims(tf.cast(tf.math.count_nonzero(flattened, axis=-1), dtype='float32'), axis=1)
     #will have a meaning for non toy model
     outdict['n_active'] = tf.zeros_like(outdict['n_nonoise'])+64.*64.
     outdict['n_noise'] = 64.*64.-outdict['n_nonoise']
@@ -82,7 +84,7 @@ def create_particle_loss_dict(truth, pred):
     
     '''
     outdict={}
-    truth = tf.Print(truth,[tf.shape(truth),tf.shape(pred)],'truth, pred ',summarize=30)
+    #truth = tf.Print(truth,[tf.shape(truth),tf.shape(pred)],'truth, pred ',summarize=30)
 
     #make it all lists
     outdict['t_mask'] =  truth[:,:,0:1]
@@ -105,8 +107,11 @@ def create_particle_loss_dict(truth, pred):
     
     outdict['p_rhid'] = pred[:,:,8:9]
     
+    outdict['f_energy'] = pred[:,:,9:10]
+    outdict['f_pos'] = pred[:,:,10:12]
+    
     flattened = tf.reshape(outdict['t_mask'],(tf.shape(outdict['t_mask'])[0],-1))
-    outdict['n_nonoise'] = tf.expand_dims(tf.cast(tf.count_nonzero(flattened, axis=-1), dtype='float32'), axis=1)
+    outdict['n_nonoise'] = tf.expand_dims(tf.cast(tf.math.count_nonzero(flattened, axis=-1), dtype='float32'), axis=1)
     #will have a meaning for non toy model
     #outdict['n_active'] = tf.zeros_like(outdict['n_nonoise'])+64.*64.
     outdict['n_noise'] =  tf.cast(tf.shape(outdict['t_mask'])[1], dtype='float32') -outdict['n_nonoise']
@@ -132,7 +137,7 @@ def mean_nvert_with_nactive(A, n_active):
     return ssum / den
 
 def beta_weighted_truth_mean(l_in, d, beta_scaling,Nobj):#l_in B x V x 1
-    l_in = tf.reduce_sum(l_in, axis=1)# B x 1
+    l_in = tf.reduce_sum(beta_scaling*d['t_mask']*l_in, axis=1)# B x 1
     print('Nobj',Nobj.shape)
     den =  tf.reduce_sum(d['t_mask']*beta_scaling, axis=1) + K.epsilon()#B x 1
     return l_in/den
@@ -154,7 +159,7 @@ def cross_entr_loss(d, beta_scaling,Nobj):
     return tf.reduce_mean(xentr_loss)
 
 def pos_loss(d, beta_scaling,Nobj):
-    posl = d['t_mask']*beta_scaling*tf.reduce_sum(tf.abs(d['t_pos'] - d['p_pos']), axis=2,keepdims=True)
+    posl = d['t_mask']*tf.reduce_sum(tf.abs(d['t_pos'] - d['p_pos']), axis=2,keepdims=True)
     #posl = tf.reduce_sum(posl, axis=1)
     #posl = mean_nvert_with_nactive(d['t_mask']*posl,d['n_nonoise'])
     #posl = tf.where(tf.is_nan(posl), tf.zeros_like(posl)+10., posl)
@@ -197,7 +202,7 @@ def k_xentr_loss(d, beta_scaling, Nobj, kalpha, isobj):
     return tf.squeeze(isobj, axis=1)*xentr/den
 
 
-def k_energy_loss(d, beta_scaling, Nobj, kalpha, isobj):
+def k_energy_corr_loss(d, beta_scaling, Nobj, kalpha, isobj):
     pen = tf.gather_nd(d['p_E'],kalpha,batch_dims=1)
     ten = tf.gather_nd(d['t_E'],kalpha,batch_dims=1) #B x 1
     balpha = tf.gather_nd(beta_scaling,kalpha,batch_dims=1) # B x 1
@@ -215,7 +220,7 @@ def k_energy_loss(d, beta_scaling, Nobj, kalpha, isobj):
     return tf.squeeze(isobj, axis=1)*eloss/den
 
 def box_loss(d, beta_scaling,Nobj):
-    bboxl = d['t_mask']*beta_scaling*tf.reduce_sum(tf.abs(d['t_dim'] - d['p_dim']), axis=-1,keepdims=True)
+    bboxl = tf.reduce_sum(tf.abs(d['t_dim'] - d['p_dim']), axis=-1,keepdims=True)
     #bboxl = tf.reduce_sum(bboxl, axis=1)
     #bboxl = mean_nvert_with_nactive(d['t_mask']*bboxl,d['n_nonoise'])
     #bboxl = tf.where(tf.is_nan(bboxl), tf.zeros_like(bboxl)+10., bboxl)
@@ -224,15 +229,27 @@ def box_loss(d, beta_scaling,Nobj):
     
     #return tf.reduce_mean( bboxl)
     
-def energy_loss(d,payload_scaling,Nobj):
-    dE = d['p_E']-d['t_E']
+def part_pos_loss(d, beta_scaling,Nobj):
+    f_pos = d['f_pos']
+    dPos = d['p_pos']+f_pos - d['t_pos'] #B x V x 2
+    posl = tf.reduce_sum( dPos**2, axis=-1, keepdims=True )#B x V x 1
     
-    rel_calo_reso_sq =  d['t_mask']*( (0.0028/tf.sqrt(d['t_E']+K.epsilon()))**2 + (0.12/(d['t_E']+K.epsilon()))**2 + 0.003**2 )
-    pt = d['t_E']
-    rel_trackreso = d['t_mask']*( (pt/100.)*(pt/100.)*0.04 +0.01)
-    comb_reso_sq =  d['t_E']**2 *0.5 *(rel_calo_reso_sq + rel_trackreso**2)#>0
+    return beta_weighted_truth_mean(posl,d,beta_scaling,Nobj)
+    #return tf.reduce_mean( posl)
+
+
+def energy_corr_loss(d,payload_scaling,Nobj):
+    f_en = d['f_energy']
+    dE = d['p_E']*f_en- d['t_E']
     
-    eloss = d['t_mask']*payload_scaling* dE**2/(comb_reso_sq+K.epsilon())
+    #rel_calo_reso_sq =  d['t_mask']*( (0.0028/tf.sqrt(d['t_E']+K.epsilon()))**2 + (0.12/(d['t_E']+K.epsilon()))**2 + 0.003**2 )
+    #pt = d['t_E']
+    #rel_trackreso = d['t_mask']*( (pt/100.)*(pt/100.)*0.04 +0.01)
+    #comb_reso_sq =  d['t_E']**2 *0.5 *(rel_calo_reso_sq + rel_trackreso**2)#>0
+    #
+    #eloss = d['t_mask']*payload_scaling* dE**2/(comb_reso_sq+K.epsilon())
+    
+    eloss = dE**2/(d['t_E']**2 + K.epsilon())
     
     return beta_weighted_truth_mean(eloss,d,payload_scaling,Nobj)#>0
     
@@ -368,10 +385,10 @@ def particle_condensation_loss(truth,pred):
     
     ididff = tf.concat([d['p_rhid'], d['t_rhid'], d['p_rhid']-d['t_rhid'] ], axis=-1)
     
-    reploss = tf.Print(reploss,[tf.reduce_mean(d['p_rhid']-d['t_rhid'])],'ididff ')
+    #reploss = tf.Print(reploss,[tf.reduce_mean(d['p_rhid']-d['t_rhid'])],'ididff ')
     
     
-    payload_scaling = calculate_charge(d['p_beta'],0.1)
+    payload_scaling = calculate_charge(d['p_beta'],0.)
     
     posl =   tf.zeros_like(isobj[0][:,0])#B 
     E_loss = posl
@@ -382,26 +399,31 @@ def particle_condensation_loss(truth,pred):
         kalpha = alpha[i]
         iobj_k = isobj[i]
         
-        posl += k_pos_loss(d, payload_scaling, Nobj, kalpha, iobj_k) 
-        E_loss += k_energy_loss(d, payload_scaling, Nobj, kalpha, iobj_k)
-        xentr_loss += k_xentr_loss(d, payload_scaling, Nobj, kalpha, iobj_k)
+        #posl += k_pos_loss(d, payload_scaling, Nobj, kalpha, iobj_k) 
+        #E_loss += k_energy_corr_loss(d, payload_scaling, Nobj, kalpha, iobj_k)
+        #xentr_loss += k_xentr_loss(d, payload_scaling, Nobj, kalpha, iobj_k)
         
     
-    posl       =  tf.reduce_mean(pos_loss(d,payload_scaling,Nobj))/150.
-    E_loss      =  tf.reduce_mean(energy_loss(d,payload_scaling,Nobj)) / 50.
-    xentr_loss =  tf.reduce_mean(cross_entr_loss(d,payload_scaling,Nobj))
+    posl       = 0.01*  tf.reduce_mean(part_pos_loss(d,payload_scaling,Nobj))
+    E_loss     = 10.* tf.reduce_mean(energy_corr_loss(d,payload_scaling,Nobj))
+    #xentr_loss = 0.0* tf.reduce_mean(cross_entr_loss(d,payload_scaling,Nobj))
     
+    #betaloss *= 10.
     
-    loss = reploss + attloss + betaloss + supress_noise_loss + 1.*posl + 1.*E_loss+ 0.* xentr_loss
-    loss = tf.Print(loss,[loss,
+    loss = reploss + attloss + betaloss + supress_noise_loss + posl + E_loss
+    
+    loss = printWorkaround(loss, [d['n_noise']],'n_noise ')
+    
+    loss = printWorkaround(loss,[loss,
                               reploss,
                               attloss,
                               betaloss,
                               supress_noise_loss,
-                              posl,
                               E_loss,
-                              xentr_loss
+                              tf.sqrt(E_loss/10),
+                              posl,
+                              tf.sqrt(posl)*10
                               ],
-                              'loss, repulsion_loss, attraction_loss, min_beta_loss, supress_noise_loss, pos_loss, E_loss, xentr_loss  ' )
+                              'loss, repulsion_loss, attraction_loss, min_beta_loss, supress_noise_loss, E_loss, sqrt(E_loss/10), posl , tf.sqrt(posl)*10[cm]' )
     return loss
 

@@ -1,4 +1,6 @@
 
+from __future__ import print_function 
+
 from plotting_tools import plotter_fraction_colors, snapshot_movie_maker_Nplots, plotter_2d, plotter_3d
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 import multiprocessing
@@ -11,6 +13,17 @@ import matplotlib.pyplot as plt
 import math
 import matplotlib.cm as mplcm
 import matplotlib as mpl
+
+import tensorflow as tf
+
+def printWorkaround(x, plist, msg):
+    if int(tf.__version__[0])>1:
+        tf.print(msg, plist, sep=',')
+        return x
+    else:
+        return tf.Print(x,plist,msg)
+
+
 
 def make_shared(arr):
     fulldim=1
@@ -105,7 +118,70 @@ class plot_pred_during_training(object):
         p.start()
         
         
+def make_particle_resolution_plots(feat,predicted,truth,outfile):
+    from inference import make_particle_inference_dict, collect_condensates
+    d = make_particle_inference_dict(predicted, feat , truth)
+        # B x V x F
+    pred_E   = d['f_E']* d['p_E_corr']
+    pred_pos = d['f_pos'] + d['p_pos_offs']
         
+    condensate_mask = collect_condensates(d, 0.1, 0.8) #B x V x 1
+    condensate_mask = np.reshape(condensate_mask, [condensate_mask.shape[0],condensate_mask.shape[1]]) #B x V 
+    
+    print('condensate_mask',condensate_mask.shape)
+    
+    n_condensates = np.sum(condensate_mask, axis=-1, keepdims=True) #B x 1
+    n_true_particles = np.reshape(np.max(d['t_objidx'],axis=1)+1., [d['t_objidx'].shape[0],1])  #B x 1 x 1
+    
+    n_total_condensates = np.sum(n_condensates)
+    
+    print('fraction of right number: ',float(np.sum(n_condensates==n_true_particles))/float(n_true_particles.shape[0]))
+    
+    flat_cond_mask =  np.reshape(condensate_mask, [-1])
+    
+    flat_E_true = np.reshape(d['t_E'],[-1])
+    flat_E_pred = np.reshape(pred_E,[-1])
+    
+    E_resolution = flat_E_pred*flat_cond_mask/(flat_E_true+0.0001) # B x V x 1
+    #E_variance = 
+    
+    E_resolution = E_resolution[flat_cond_mask>0]
+    sel_E_true = flat_E_true[flat_cond_mask>0]
+    
+    
+    
+    #energy resolution
+    fig = plt.figure(figsize=(4.8, 4.8))
+    axs = [fig.add_subplot(2,1,1),
+            fig.add_subplot(2,1,2)]
+    
+    axs[0].hist(E_resolution,bins=31, range=[0.85,1.15])
+    axs[1].hist2d(sel_E_true,E_resolution,bins=21, range=[[0,200],[0.7,1.3]])
+    
+    fig.savefig(outfile, dpi=300)
+    fig.clear()
+    plt.close(fig)
+    plt.clf()
+    plt.cla()
+    plt.close() 
+        
+    
+                
+        
+class plot_particle_resolution_during_training(PredictCallback):
+    def __init__(self, outfilename, **kwargs):
+        PredictCallback.__init__(self,**kwargs)
+        self.function_to_apply=self.make_plot
+        self.outfilename=outfilename
+
+    def make_plot(self,call_counter,feat,predicted,truth):  
+    
+        outfile=self.outfilename+"_"+str(call_counter)+".pdf"
+        make_particle_resolution_plots(feat[0],predicted[0],truth[0],outfile)
+        
+        
+        
+      
 
 class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
     def __init__(self, 
@@ -941,10 +1017,7 @@ class plot_pixel_3D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         if gcisenabled:
             gc.enable()   
                 
-    
-        
     def _make_plot(self,call_counter,feat,predicted,truth):
-        self.glob_counter = call_counter
         pred  = copy.deepcopy(predicted[0]) #not a list anymore, 0th event
         truth = copy.deepcopy(truth[0]) # make the first epoch be the truth plot
         calo_feat  = copy.deepcopy(feat[0][0]) #not a list anymore 0th event
@@ -952,6 +1025,11 @@ class plot_pixel_3D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         calo_feat = np.reshape(calo_feat,[calo_feat.shape[0]**2,-1])
         track_feat = np.reshape(track_feat,[track_feat.shape[0]**2,-1])
         feat  = np.concatenate([calo_feat,track_feat ],axis=0)
+        self.glob_counter = call_counter
+        self._make_plot_real(pred,truth,feat)
+        
+    def _make_plot_real(self,pred,truth,feat):
+        
         '''
         t_mask =    tf.reshape(truth[:,:,:,0:1], reshaping) 
     true_pos =  tf.reshape(truth[:,:,:,1:3], reshaping) 
@@ -1030,17 +1108,19 @@ class plot_pixel_3D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         
         energy = feat[:,0]
         #use default size and change sigtly
-        size_scaling = mpl.rcParams['lines.markersize']**2 * (0.5+ np.log(energy+1))
+        size_scaling = mpl.rcParams['lines.markersize']**2 * (0.5+ np.log(energy+1))/4.
         
     # plot cluster space
         rgb_cols = colours / 1.1
         
         
         betacols = np.array(betas)
-        betacols/=np.max(betacols)#normalise
+        betacols/=np.max(betacols)+1e-3#normalise
         betacols[betacols<0.05] = 0.05
-        betacols*=0.8
-        betacols+=0.2
+        betacols*=0.9
+        betacols+=0.1
+        
+        #def add_plot(betacols, ccorrdsx, ccorrdsy, rgbbeta_cols, size_scaling):
         
         sorting = np.reshape(np.argsort(betacols, axis=0), [-1])
         betacols = np.expand_dims(betacols,axis=1)
@@ -1048,10 +1128,10 @@ class plot_pixel_3D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         rgbbeta_cols = np.concatenate([rgb_cols, betacols] ,axis=-1)
             #colours[truth[:,0]==0]=0.
         
-        axs[1].scatter(ccorrdsx[sorting],
-                  ccorrdsy[sorting],
-                  c=rgbbeta_cols[sorting],
-                  s=size_scaling[sorting])
+        axs[1].scatter((ccorrdsx[sorting])[betas[sorting] > 0.05],
+                  (ccorrdsy[sorting])[betas[sorting] > 0.05],
+                  c=(rgbbeta_cols[sorting])[betas[sorting] > 0.05],
+                  s=(size_scaling[sorting])[betas[sorting] > 0.05])
         
         #add some slight alpha to the left image to indicate condensation points
         
@@ -1090,6 +1170,15 @@ class plot_pixel_3D_clustering_flat_during_training(plot_pixel_2D_clustering_dur
         
         
        
+class plot_pixel_3D_clustering_flat_during_training_graph(plot_pixel_3D_clustering_flat_during_training):
+    
+    def _make_plot(self,call_counter,feat,predicted,truth):
+        pred  = copy.deepcopy(predicted[0]) #not a list anymore, 0th event
+        truth = copy.deepcopy(truth[0]) # make the first epoch be the truth plot
+        feat  = copy.deepcopy(feat[0][0]) #not a list anymore 0th event
+        self.glob_counter = call_counter
+        self._make_plot_real(pred,truth,feat)
+    
             
 class plot_pixel_metrics_clustering_during_training(plot_pixel_1D_clustering_during_training):
     def __init__(self, 

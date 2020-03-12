@@ -75,7 +75,7 @@ for event in range(len(calo)):
     
     
     
-    print('PF_calo_clusters', [str(cl) for cl in PF_calo_clusters])
+    #print('PF_calo_clusters', [str(cl) for cl in PF_calo_clusters])
     
     
 clust_energies =np.array([cl.energy for cl in allclusters])

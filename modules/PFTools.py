@@ -48,6 +48,14 @@ class calo_cluster(object):
         return  self.energy/one_over_factor #+ 7.2063e-06*self.energy**3
 
 
+class pf_track(object):
+    def __init__(self,energy,pos):
+        self.energy=energy
+        self.position=pos
+        
+    def rel_resolution(self,pt):
+        return (pt/100.)*(pt/100.)*0.04 +0.01;
+
 
 @jit(nopython=True)     
 def gen_get_truth_particles(eventtruth):#truth input: V x F
@@ -210,7 +218,7 @@ def c_match_cluster_to_truth(clusters, true_pos, true_en, truth_used):# per even
         best_it=-1
         for i_t in range(len(true_pos)):
             if truth_used[i_t]: continue
-            this_L1_dist = abs(cl.position[0]-true_pos[i_t][0])+abs(cl.position[0]-true_pos[i_t][0])
+            this_L1_dist = abs(cl.position[0]-true_pos[i_t][0])+abs(cl.position[1]-true_pos[i_t][1])
             if this_L1_dist < 22. and this_L1_dist < L1_dist:
                  best_it=i_t
                  L1_dist=this_L1_dist
@@ -230,12 +238,12 @@ def match_cluster_to_truth(clusters, true_pos, true_en):
 
 
 def perform_linking(clusters, tracks):
-    valid_tracks = tracks[tracks[:,:,0]>0.1]
+    valid_tracks = tracks[tracks[:,:,0]>0.1]#just cut on energy
+    
+    
     
 
-
-
-
+    
 
 
 

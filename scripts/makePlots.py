@@ -8,86 +8,8 @@ import matplotlib.image as mpimg
 import matplotlib.patches as patches
 import math  
 from numba import jit
-
-def makedict(pred,feat,truth):
-    
-    outdict = {}
-    outdict['t_mask'] =  truth[:,:,:,0:1]
-    outdict['t_pos']  =  truth[:,:,:,1:3]
-    outdict['t_ID']   =  truth[:,:,:,3:6]
-    outdict['t_dim']  =  truth[:,:,:,6:8]
-    #n_objects = truth[:,0,0,8]
-
-    outdict['p_beta']   =  pred[:,:,:,0:1]
-    outdict['p_pos']    =  pred[:,:,:,1:3]
-    outdict['p_ID']     =  pred[:,:,:,3:6]
-    outdict['p_dim']    =  pred[:,:,:,6:8]
-    
-    outdict['p_ccoords'] = pred[:,:,:,8:]
-    
-    
-    outdict['f_rgb'] = feat[:,:,:,0:3]
-    outdict['f_xy'] = feat[:,:,:,3:]
-    
-    return outdict
-        
-def maskbeta(datadict, dims, threshold):
-    betamask = np.tile(datadict['p_beta'], [1,1,1,dims])
-    betamask[betamask>threshold] = 1
-    betamask[betamask<=threshold] = 0
-    return betamask
-
-
-@jit(nopython=True)        
-def c_collectoverthresholds(betas, 
-                            ccoords, 
-                            sorting,
-                            betasel,
-                          beta_threshold, distance_threshold):
-    
-
-    for e in range(len(betasel)):
-        selected = []
-        for si in range(len(sorting[e])):
-            i = sorting[e][si]
-            use=True
-            for s in selected:
-                distance = math.sqrt( (s[0]-ccoords[e][i][0])**2 +  (s[1]-ccoords[e][i][1])**2 )
-                if distance  < distance_threshold:
-                    use=False
-                    break
-            if not use:
-                betasel[e][i] = False
-                continue
-            else:
-                selected.append(ccoords[e][i])
-             
-    return betasel
-    
-def collectoverthresholds(data, 
-                          beta_threshold, distance_threshold):
-    
-    betas   = np.reshape(data['p_beta'], [data['p_beta'].shape[0], -1])
-    ccoords = np.reshape(data['p_ccoords'], [data['p_ccoords'].shape[0], -1, data['p_ccoords'].shape[3]])
-    
-    sorting = np.argsort(-betas, axis=1)
-    
-    betasel = betas > beta_threshold
-    
-    bsel =  c_collectoverthresholds(betas, 
-                            ccoords, 
-                            sorting,
-                            betasel,
-                          beta_threshold, distance_threshold)
-    
-    
-    return np.reshape(bsel , [data['p_beta'].shape[0], data['p_beta'].shape[1], data['p_beta'].shape[2]])
-    
-
             
-            
-            
-            
+from inference import collect_condensates   , make_inference_dict  
             
        
 
@@ -103,10 +25,10 @@ td.readFromFile(args.inputFile)
 
 td.x = td.transferFeatureListToNumpy()
 
-data = makedict(td.x[0],td.x[1],td.x[2])
+data = make_inference_dict(td.x[0],td.x[1],td.x[2])
 
 
-betaselection = collectoverthresholds(data, 0.1, 0.8) #0.2/2.0
+betaselection = collect_condensates(data, 0.1, 0.8) #0.2/2.0
 
 print('betaselection',betaselection.shape)
 
