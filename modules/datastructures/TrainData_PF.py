@@ -28,7 +28,7 @@ def c_sum_energies(energies, uni_t_idx, out_energies):#energies: Nev x V, t_idx:
 class TrainData_PF(TrainData):
     def __init__(self):
         TrainData.__init__(self)
-
+        self.npart=9
     
     def separateLayers(self, inarr, layerarr):
         #lay0 = np.array(list(inarr[layerarr<-99.9]), dtype='float32')
@@ -84,7 +84,8 @@ class TrainData_PF(TrainData):
                      rechit_layer,
                      rechit_detid,
                      
-                     maxpart
+                     maxpart,
+                     istraining
                      ):
         
         
@@ -107,6 +108,13 @@ class TrainData_PF(TrainData):
             npart=1
             if maxpart>1:
                 npart = np.random.randint(1,maxpart)
+                if not istraining: #flat distribution
+                    probs = [1/float(i) for i in range(1,maxpart+1)]
+                    #probs.reverse()
+                    probs = np.array(probs)
+                    probs/= np.sum(probs)
+                    
+                    npart = np.random.choice(np.array(range(1,maxpart+1)), p= probs)
             if used_events+npart > totalevents:
                 npart=totalevents-used_events
                 
@@ -252,7 +260,8 @@ class TrainData_PF(TrainData):
                      rechit_layer,
                      rechit_detid,
                      
-                     maxpart=9)
+                     maxpart=self.npart,
+                     istraining=istraining)
         
         
         print('feat',feat.shape)
@@ -359,6 +368,20 @@ class TrainData_PF_graph(TrainData_PF):
         
 
         
+class TrainData_PF_hipart(TrainData_PF):
+    def __init__(self):
+        TrainData_PF.__init__(self)
+        self.npart=15    
+
+class TrainData_PF_graph_hipart(TrainData_PF_graph): 
+    def __init__(self):
+        TrainData_PF_graph.__init__(self)
+        self.npart=15   
         
+#for calibration
+class TrainData_PF_onepart(TrainData_PF):
+    def __init__(self):
+        TrainData_PF.__init__(self)
+        self.npart=1    
         
     

@@ -24,6 +24,8 @@ with open(args.inputFile) as file:
         inputfile = inputfile.replace('\n', '')
         if len(inputfile)<1: continue
 
+        print('inputfile',inputfile)
+        
         td = TrainData()
         td.readFromFile(inputfile)
         indata = td.transferFeatureListToNumpy()
@@ -40,7 +42,6 @@ with open(args.inputFile) as file:
         nevents = pred.shape[0]
         
         for event in range(nevents):
-            print('event',event)
             ev_pred_E    = pred_E[event][condensate_mask[event]>0][:,0]
             ev_pred_pos  = pred_pos[event][condensate_mask[event]>0]
             ev_truth = truth[event]

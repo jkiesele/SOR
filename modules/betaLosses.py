@@ -405,7 +405,7 @@ def particle_condensation_loss(truth,pred):
         
     
     posl       = 0.01*  tf.reduce_mean(part_pos_loss(d,payload_scaling,Nobj))
-    E_loss     = 10.* tf.reduce_mean(energy_corr_loss(d,payload_scaling,Nobj))
+    E_loss     = 20.* tf.reduce_mean(energy_corr_loss(d,payload_scaling,Nobj))
     #xentr_loss = 0.0* tf.reduce_mean(cross_entr_loss(d,payload_scaling,Nobj))
     
     #betaloss *= 10.

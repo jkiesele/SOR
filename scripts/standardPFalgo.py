@@ -25,6 +25,8 @@ with open(args.inputFile) as file:
         inputfile = inputfile.replace('\n', '')
         if len(inputfile)<1: continue
         
+        print('inputfile',inputfile)
+        
         td = TrainData()
         td.readFromFile(inputfile)
         feat = td.transferFeatureListToNumpy()
@@ -33,15 +35,12 @@ with open(args.inputFile) as file:
         calo = feat[0]
         tracks = feat[1]
         
-        
         print('making seeds, also using tracks as seeds')
         seed_idxs, seedmap = calo_getSeeds(calo,tracks)
         
-        for event in range(len(calo)):
+        def run_event(event):
             
             #make calo clusters
-            print('event',event)
-            
             e_seeds = seed_idxs[event]
             e_calo = calo[event,:,:,:]
             e_tracks = tracks[event,:,:,:]
@@ -56,11 +55,21 @@ with open(args.inputFile) as file:
             ev_truth = truth[event]
             
             
-            eventparticles = find_best_matching_truth_and_format(ev_reco_pos, ev_reco_E, ev_truth, pos_tresh=2*22.)
-            allparticles.append(eventparticles)
+            arr=find_best_matching_truth_and_format(ev_reco_pos, ev_reco_E, ev_truth, pos_tresh=3*22.)
+            #print(arr.shape)
+            return arr
+            
+        #for event in range(len(calo)):
+        #    allparticles.append(run_event(event))
+            
+        
+        from multiprocessing import Pool
+        p = Pool()
+        allparticles+=p.map(run_event,range(calo.shape[0]))
+            
     
 allparticles = np.concatenate(allparticles,axis=0)
-
+print(allparticles.shape)
 print('efficiency: ', float(np.count_nonzero( allparticles[:,0] *  allparticles[:,4]))/float( np.count_nonzero(allparticles[:,4] ) ))
 print('fake: ', float(np.count_nonzero( allparticles[:,0] *  (1.-allparticles[:,4])))/float( np.count_nonzero(allparticles[:,0] ) ))
 

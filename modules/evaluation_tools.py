@@ -39,7 +39,7 @@ def c_find_best_matching_truth(pf_pos, pf_energy, t_Mask, t_pos, t_E, t_objidx,t
         
         
         bestmatch_idx=-1
-        bestmatch_distance_sq = 2*pos_tresh**2
+        bestmatch_distance_sq = 2*pos_tresh**2+1e6
         bestmatch_energy_diff=1000
         bestmatch_energy = -1.
         bestmatch_posx = -999.
@@ -62,9 +62,12 @@ def c_find_best_matching_truth(pf_pos, pf_energy, t_Mask, t_pos, t_E, t_objidx,t
             
             if dist_sq > pos_tresh**2 : continue
             
-            if abs(dist_sq - bestmatch_distance_sq) < 0.01**2 *tracker_pos_res**2: #same position check for energy
-                if bestmatch_energy_diff < abs_energy_diff: continue
-            elif bestmatch_distance_sq < dist_sq : continue
+            #get to about 22^2 contribution for 5 % relative momentum difference (3 sigma-ish)
+            dist_sq += (22./0.1)**2 * (pf_e/t_e -1)**2
+            
+            #if abs(dist_sq - bestmatch_distance_sq) < 0.001**2: #same position check for energy
+            #    if bestmatch_energy_diff < abs_energy_diff: continue
+            if bestmatch_distance_sq < dist_sq : continue
                 
             bestmatch_distance_sq = dist_sq
             bestmatch_energy_diff = abs_energy_diff
@@ -147,6 +150,7 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.)
     
     
     rest_t_objidx = np.unique(d['t_objidx'][0])
+    n_true = float(len(rest_t_objidx)-1.)
     matched_pos, matched_e, matched_id, not_recoed_pos, not_recoed_e, not_recoed_id = c_find_best_matching_truth(pf_pos, 
                                                                      pf_energy, 
                                                                      d['t_mask'][0],d['t_pos'][0], d['t_E'][0], d['t_objidx'][0], d['t_ID'][0],
@@ -161,7 +165,7 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.)
     is_reco = np.zeros_like(matched_e)+1
     is_true = np.where(matched_e>=0, np.zeros_like(matched_e)+1., np.zeros_like(matched_e))
     
-    
+    n_true_arr = np.tile(n_true,[matched_e.shape[0]])
     #print('is_reco',is_reco.shape)
     #print('pf_pos',pf_pos.shape)
     #print('pf_energy',pf_energy.shape)
@@ -172,7 +176,7 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.)
     #print('matched_id',matched_id.shape)
     
     all_recoed = multi_expand_dims([is_reco, pf_pos[:,0],pf_pos[:,1], pf_energy, 
-                                 is_true, matched_posx,matched_posy, matched_e, matched_id],axis=1)
+                                 is_true, matched_posx,matched_posy, matched_e, matched_id, n_true_arr],axis=1)
     #concat the whole thing
     all_recoed = np.concatenate(all_recoed,axis=-1)
     
@@ -181,13 +185,12 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.)
         not_recoed_posx, not_recoed_posy = np.array(not_recoed_pos)[:,0], np.array(not_recoed_pos)[:,1]
         not_recoed_e   = np.array(not_recoed_e)
         not_recoed_id  = np.array(not_recoed_id)
+        n_true_arr = np.tile(n_true,[not_recoed_e.shape[0]])
          
-        all_not_recoed = multi_expand_dims([np.zeros_like(not_recoed_e)+1., not_recoed_posx, not_recoed_posy, not_recoed_e, not_recoed_id], axis=1)
+        all_not_recoed = multi_expand_dims([np.zeros_like(not_recoed_e)+1., not_recoed_posx, not_recoed_posy, not_recoed_e, not_recoed_id,n_true_arr], axis=1)
         #is_true, true_posx, true_posy, true_e, true_id
         all_not_recoed = np.concatenate(all_not_recoed,axis=-1)
-        all_not_recoed = np.pad(all_not_recoed, [(4,0)], mode='constant', constant_values=0)
-        print('all_recoed',all_recoed.shape)
-        print('all_not_recoed',all_not_recoed.shape)
+        all_not_recoed = np.pad(all_not_recoed, [(0,0),(4,0)], mode='constant', constant_values=0)
         all_recoed = np.concatenate([all_recoed,all_not_recoed],axis=0)
     
     # particle: is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id
@@ -197,7 +200,7 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.)
     
 def write_output_tree(allparticles, outputFile):
     from root_numpy import array2root
-    out = np.core.records.fromarrays(allparticles.transpose() ,names="is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id")
+    out = np.core.records.fromarrays(allparticles.transpose() ,names="is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id, n_true")
     array2root(out, outputFile+".root", 'tree')    
     
     

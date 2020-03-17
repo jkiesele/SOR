@@ -24,9 +24,13 @@ sigma = 15 #(everything mm)
 cellsize = 22 #(everything mm)
 
 class calo_cluster(object):
-    def __init__(self,energy,pos,true_energy=-1,true_pos=[-1000,-1000]):
+    def __init__(self,energy,pos,true_energy=-1,true_pos=[-1000,-1000],auto_correct=True):
         #self.seed_idx=[]
-        self.energy=float(energy)
+        self.raw_energy=float(energy)
+        if auto_correct:
+            self.energy = self.corrected_energy()
+        else:
+            self.energy =float(energy)
         self.position=pos
         self.true_energy=float(true_energy)
         self.true_position=true_pos
@@ -37,16 +41,19 @@ class calo_cluster(object):
         return outstr
     
     def rel_resolution(self):
-        a = 0.028/math.sqrt(self.energy)
-        b = 0.12/self.energy
+        a = 0.028/math.sqrt(self.raw_energy)
+        b = 0.12/self.raw_energy
         c = 0.003
         return math.sqrt(a**2 +b**2 + c**2)
     
     def corrected_energy(self):
-        one_over_factor=0.847919 + 0.00639966*self.energy + -0.000404986*self.energy**2 \
-        + 1.10737e-05*self.energy**3 + -1.57167e-07*self.energy**4 + 1.20291e-09*self.energy**5\
-        + -4.71213e-12*self.energy**6 + 7.41855e-15*self.energy**7
-        return  self.energy/one_over_factor #+ 7.2063e-06*self.energy**3
+        correction=[0.232003, 0.154363, 0.11502, 0.101097, 0.0910503, 0.0803878, 0.0781168, 0.0675792, 0.066902, 0.0631375, 0.0568874, 0.0549433, 0.0523861, 0.0495527, 0.0467294, 0.0487137, 0.0470667, 0.0444684, 0.0452477, 0.0442534, 0.0440805, 0.0412865, 0.0404734, 0.040456, 0.0403804, 0.0366778, 0.0395069, 0.0395929, 0.0382809, 0.045748, 0.0370244, 0.0380361, 0.0370609, 0.0354982, 0.0349171, 0.032645, 0.0348077, 0.0336804, 0.0333142, 0.0356254, 0.0352205, 0.0347787, 0.0333894, 0.0335886, 0.0312848, 0.0310355, 0.0301917, 0.032541, 0.030749, 0.0304408, 0.0297812, 0.0296988, 0.0302681, 0.0298181, 0.0300255, 0.0291764, 0.0301196, 0.0294602, 0.0285039, 0.0299342, 0.0294821, 0.0289808, 0.0293909, 0.0286514, 0.0278709, 0.0283908, 0.0290217, 0.0279209, 0.0288098, 0.0290473, 0.0283216, 0.028029, 0.0272448, 0.0281357, 0.0280815, 0.028125, 0.0278979, 0.0279728, 0.027679, 0.0281353, 0.0280853, 0.0279206, 0.0276693, 0.0279158, 0.028024, 0.0274686, 0.0271699, 0.0268066, 0.0270936, 0.0272405, 0.0272205, 0.0272896, 0.0264852, 0.0268068, 0.025894, 0.0254074, 0.0245043, 0.0218438, 0.0178572]
+        bin = int(self.raw_energy/2.)
+        if bin>= 99: 
+            bin=98
+        elif bin < 0:
+            bin=0
+        return  self.raw_energy*(1. + correction[bin]) #+ 7.2063e-06*self.energy**3
 
 
 class pf_track(object):
@@ -61,7 +68,7 @@ class pf_track(object):
 
 class pfCandidate(calo_cluster):
     def __init__(self,energy=-1,pos=[0.,0.]):
-        calo_cluster.__init__(self,energy,pos)
+        calo_cluster.__init__(self,energy,pos, auto_correct=False)
         
     
     def create_from_link(self, calocluster, pftrack=None):
@@ -71,7 +78,7 @@ class pfCandidate(calo_cluster):
             return None
         else: #use a weighted mean
             
-            self.position = pftrack.position
+            self.position = 1./(2+1)*(2.*pftrack.position+calocluster.position)
             
             t = pftrack.energy
             dt = pftrack.rel_resolution()
@@ -283,7 +290,7 @@ def c_perform_linking(cluster_positions, track_positions):
     
     matching=[] #i_cluster, i_track
     for i_c in range(len(cluster_positions)):
-        best_distancesq = 1e3
+        best_distancesq = 1e3**2
         best_track = -1
         for i_t in range(len(track_positions)):
             distsq = (cluster_positions[i_c][0]-track_positions[i_t][0])**2 + (cluster_positions[i_c][1]-track_positions[i_t][1])**2
@@ -302,8 +309,12 @@ def perform_linking(clusters, tracks):
     
     cluster_positions = np.array([c.position for c in clusters])
     track_positions = np.array([t.position for t in tracks])
-    matching = c_perform_linking(cluster_positions, track_positions)
-    
+    matching=[]
+    if len(tracks):
+        matching = c_perform_linking(cluster_positions, track_positions)
+    else:
+        matching = [[i,-1] for i in range(len(cluster_positions))]
+        
     particles = []
     for m in matching:
         pfc = pfCandidate()

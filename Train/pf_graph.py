@@ -70,6 +70,7 @@ def minimodel(Inputs,feature_dropout=-1.):
         x = GlobalExchange()(x)
         x = Dense(64, activation='elu')(x)
         x = Dense(64, activation='elu')(x)
+        x = BatchNormalization(momentum=0.6)(x)
         x = Dense(64, activation='elu')(x)
         x = GravNet_simple(n_neighbours=10, 
                  n_dimensions=4, 
