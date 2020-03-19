@@ -12,6 +12,7 @@
 #include "globals.h"
 #include "TLegend.h"
 #include "TLegendEntry.h"
+#include "TProfile.h"
 
 template<class T>
 class comparePlotWithAxes {
@@ -182,10 +183,35 @@ private:
 
 
 
+class compareProfile: public comparePlotWithAxes<TProfile> {
+public:
+    compareProfile(TString var, TString selection, int nbins, double minbin, double maxbin, TString xaxis, TString yaxis):
+        comparePlotWithAxes(var,selection,"",nbins,minbin,maxbin,xaxis,yaxis){
+        createObj(var,selection,"",nbins,minbin,maxbin);
+        setStyleDefaults();
+    }
+
+    void createObj(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin) override {
+
+        classic_o_  = new TProfile("ha"+objstr_,"ha"+objstr_, nbins, minbin, maxbin);
+        oc_o_       = new TProfile("hb"+objstr_,"hb"+objstr_, nbins, minbin, maxbin);
+
+        global::classic_tree->Draw(var+">>"+"ha"+objstr_,selection,"prof");
+        global::oc_tree->Draw(var+">>"+"hb"+objstr_,selection,"prof");
+
+        auto max=oc_o_->GetMaximum();
+
+        AxisHisto()->GetYaxis()->SetRangeUser(0, max*1.1);
+
+    }
+};
+
+
+
 TLegendEntry * makeLegEntry(TLegend* leg, TString name, TString option, int col, int style=-1);
 
 
-
+void placeLegend(TLegend* leg, double x1, double y1, double x2=-1, double y2=-1);
 
 
 
