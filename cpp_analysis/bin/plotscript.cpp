@@ -22,7 +22,7 @@ int global::defaultClassicColour = kAzure-5;
 
 
  TString global::defaultOCLabel="Condensation";
- TString global::defaultClassicLabel="Classic PF";
+ TString global::defaultClassicLabel="Baseline PF";
 
 TCanvas * createCanvas(){
     TCanvas * cv = new TCanvas();
@@ -56,7 +56,6 @@ int plotscript(int argc, char* argv[]){
     compareEfficiency eff_energy5_10("true_e", "is_true && n_true <= 10 && n_true>5", "(is_true && is_reco && n_true <= 10 && n_true>5)",5,0,200,"Momentum [GeV]","Efficiency");
     std::vector<compareEfficiency*> eff_mom = {&eff_energy1_5, &eff_energy5_10};
 
-
     TCanvas *cv=createCanvas();
 
     eff_energy1_5.DrawAxes();
@@ -68,8 +67,6 @@ int plotscript(int argc, char* argv[]){
         eff_mom.at(i)->Draw("same,P");
     }
 
-
-
     TLegend * leg_a = new TLegend(0.6,0.25, 0.85, 0.5);
     leg_a -> SetLineWidth(1);
     makeLegEntry(leg_a,global::defaultOCLabel,"l",global::defaultOCColour);
@@ -80,10 +77,12 @@ int plotscript(int argc, char* argv[]){
     leg_a->Draw("same");
     cv->Print("mom_efficiency.pdf");
 
-    compareEfficiency eff_n_true("n_true", "is_true", "(is_true && is_reco)",15,0.5,15.5,"Particles","Efficiency");
+
+    compareEfficiency eff_n_true("n_true", "is_true", "(is_true && is_reco)",15,0.5,15.5,"Particles per event","Efficiency");
     eff_n_true.DrawAxes();
     eff_n_true.AxisHisto()->GetYaxis()->SetRangeUser(0.75,1.01);
     eff_n_true.Draw("same,P");
+
 
     TLegend * leg_b = new TLegend(0.2,0.27, 0.5, 0.5);
     leg_b -> SetLineWidth(1);
@@ -93,16 +92,36 @@ int plotscript(int argc, char* argv[]){
 
     cv->Print("N_efficiency.pdf");
 
-    compareTH1D resolution1_5("reco_e/true_e","is_true && is_reco && n_true <= 5",31,0.8,1.2,"Momentum resolution","A.U.");
-    compareTH1D resolution5_10("reco_e/true_e","is_true && is_reco && n_true <= 10 && n_true>5",31,0.8,1.2,"Momentum resolution","A.U.");
+    compareTH1D resolution1_5("reco_e/true_e","is_true && is_reco && n_true <= 5",51,0.8,1.2,"Momentum resolution","# particles");
+    compareTH1D resolution5_10("reco_e/true_e","is_true && is_reco && n_true <= 10 && n_true>5",51,0.8,1.2,"Momentum resolution","# particles");
+    compareTH1D resolution10_15("reco_e/true_e","is_true && is_reco && n_true <= 15 && n_true>10",51,0.8,1.2,"Momentum resolution","# particles");
+
     resolution1_5.DrawAxes();
 
-    resolution1_5.setOCLineColourAndStyle(-1,2);
-    resolution1_5.setClassicLineColourAndStyle(-1,2);
-    resolution1_5.Draw("same");
-    resolution5_10.Draw("same");
+    resolution1_5.setOCLineColourAndStyle(-1,3);
+    resolution1_5.setClassicLineColourAndStyle(-1,3);
+    resolution5_10.setOCLineColourAndStyle(-1,2);
+    resolution5_10.setClassicLineColourAndStyle(-1,2);
+    resolution1_5.Draw("same","PF");
+    resolution5_10.Draw("same","PF");
+    resolution10_15.Draw("same","PF");
 
-    cv->Print("resolution.pdf");
+    TLegend * leg_c = new TLegend(0.6,0.6, 0.85, 0.85);
+    leg_c -> SetLineWidth(1);
+    makeLegEntry(leg_c,"1-5 particles","l",kBlack,3);
+    makeLegEntry(leg_c,"6-10 particles","l",kBlack,2);
+    makeLegEntry(leg_c,"10-15 particles","l",kBlack,1);
+    leg_c->Draw("same");
+
+    cv->Print("resolution_pf.pdf");
+
+    resolution1_5.DrawAxes();
+    resolution1_5.Draw("same","OC");
+    resolution5_10.Draw("same","OC");
+    resolution10_15.Draw("same","OC");
+    leg_c->Draw("same");
+
+    cv->Print("resolution_oc.pdf");
 
 
     return 0;

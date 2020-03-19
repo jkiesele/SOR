@@ -49,9 +49,17 @@ public:
 
     virtual void createObj(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin)=0;//{}
 
-    void Draw(TString opt=""){//always draws with same
-        (oc_o_)->Draw(opt);
-        (classic_o_)->Draw(opt);
+    void Draw(TString opt="", TString which=""){//always draws with same
+        if(which.Contains("OC")){
+            (oc_o_)->Draw(opt);
+        }
+        if(which.Contains("PF")){
+            (classic_o_)->Draw(opt);
+        }
+        if(which.Length()<1){
+            (classic_o_)->Draw(opt);
+            (oc_o_)->Draw(opt);
+        }
 
     }
     void DrawAxes(){
@@ -83,6 +91,7 @@ protected:
 
         axes_->GetXaxis()->SetTitle(xaxis);
         axes_->GetYaxis()->SetTitle(yaxis);
+        axes_->GetYaxis()->SetTitleOffset(1.45);
 
         axes_->GetXaxis()->SetLabelSize(0.05);
         axes_->GetYaxis()->SetLabelSize(0.05);
