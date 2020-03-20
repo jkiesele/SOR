@@ -5,7 +5,7 @@ from __future__ import print_function
 import numpy as np
 from argparse import ArgumentParser
 
-from evaluation_tools import find_best_matching_truth_and_format, write_output_tree
+from evaluation_tools import find_best_matching_truth_and_format, write_output_tree, determine_event_properties, write_event_output_tree
 from PFTools import calo_getSeeds, calo_determineClusters, perform_linking, create_pf_tracks
 
 
@@ -19,6 +19,7 @@ from DeepJetCore.TrainData import TrainData
 
 
 allparticles=[]
+evt_prop=[]
 
 with open(args.inputFile) as file:
     for inputfile in file:
@@ -52,28 +53,38 @@ with open(args.inputFile) as file:
         
             ev_reco_E    = np.array([p.energy for p in pfcands])
             ev_reco_pos  = np.array([p.position for p in pfcands])
+            pf_tidx = np.array([p.track_idx for p in pfcands])
             ev_truth = truth[event]
             
             
-            arr=find_best_matching_truth_and_format(ev_reco_pos, ev_reco_E, ev_truth, pos_tresh=3*22.)
+            arr=find_best_matching_truth_and_format(ev_reco_pos, ev_reco_E, pf_tidx, ev_truth)
+            
+            ev_pro = determine_event_properties(arr)
             #print(arr.shape)
-            return arr
+            return (arr, ev_pro)
             
         #for event in range(len(calo)):
         #    allparticles.append(run_event(event))
-            
+        #break    
         
         from multiprocessing import Pool
         p = Pool()
-        allparticles+=p.map(run_event,range(calo.shape[0]))
+        out = p.map(run_event,range(calo.shape[0])) 
+ 
+        allparticles+=[p[0] for p in out]
+        evt_prop+=[p[1] for p in out]
+        #break
             
     
 allparticles = np.concatenate(allparticles,axis=0)
+evt_prop = np.concatenate(evt_prop,axis=0)
+print('evt_prop',evt_prop.shape)
 print(allparticles.shape)
 print('efficiency: ', float(np.count_nonzero( allparticles[:,0] *  allparticles[:,4]))/float( np.count_nonzero(allparticles[:,4] ) ))
 print('fake: ', float(np.count_nonzero( allparticles[:,0] *  (1.-allparticles[:,4])))/float( np.count_nonzero(allparticles[:,0] ) ))
 
-np.save(args.outputFile+".npy", allparticles)
-write_output_tree(allparticles, args.outputFile+".root")
+
+write_output_tree(allparticles, args.outputFile)
+write_event_output_tree(evt_prop, args.outputFile)
 
 

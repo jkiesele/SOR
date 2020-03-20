@@ -13,69 +13,17 @@
 #include "../interface/globals.h"
 
 
-TTree * global::classic_tree=0;
-TTree * global::oc_tree=0;
 
 
-int global::defaultOCColour = kOrange+2;
-int global::defaultClassicColour = kAzure-5;
-
-
- TString global::defaultOCLabel="Condensation";
- TString global::defaultClassicLabel="Baseline PF";
-
-TCanvas * createCanvas(){
-    TCanvas * cv = new TCanvas();
-    cv->SetBottomMargin(0.15);
-    cv->SetLeftMargin(0.15);
-    return cv;
-}
 
 
 int plotscript(int argc, char* argv[]){
     if(argc<3) return -1;
 
-    TString classic_files = argv[1];
-    TString oc_files = argv[2];
-
-    TFile classic_f(classic_files,"READ");
-    TFile oc_f(oc_files,"READ");
-
-    global::classic_tree = (TTree*)classic_f.Get("tree");
-    global::oc_tree = (TTree*)oc_f.Get("tree");
-
-    if(!global::classic_tree || !global::oc_tree){
-        std::cerr << "tree could not be read from either file: " << classic_files << " or " << oc_files << std::endl;
-        return -1;
-    }
+    global::setTrees();
     TCanvas *cv=createCanvas();
-
+    legends::buildLegends();
     /////////standard legends
-
-
-    TLegend * leg_a = new TLegend(0.6,0.25, 0.85, 0.5);
-        leg_a -> SetLineWidth(1);
-        makeLegEntry(leg_a,global::defaultOCLabel,"l",global::defaultOCColour);
-        makeLegEntry(leg_a,global::defaultClassicLabel,"l",global::defaultClassicColour);
-        leg_a->AddEntry("","","");
-        makeLegEntry(leg_a,"1-5 particles","l",kBlack,2);
-        makeLegEntry(leg_a,"6-10 particles","l",kBlack,1);
-        leg_a->Draw();
-
-
-        TLegend * leg_a2 = new TLegend(0.6,0.25, 0.85, 0.55);
-        leg_a2 -> SetLineWidth(1);
-        makeLegEntry(leg_a2,global::defaultOCLabel,"l",global::defaultOCColour);
-        makeLegEntry(leg_a2,global::defaultClassicLabel,"l",global::defaultClassicColour);
-        leg_a2->AddEntry("","","");
-        makeLegEntry(leg_a2,"1-5 particles","l",kBlack,3);
-        makeLegEntry(leg_a2,"6-10 particles","l",kBlack,2);
-        makeLegEntry(leg_a2,"10-15 particles","l",kBlack,1);
-        leg_a2->Draw();
-
-////
-
-    /////
 
     gStyle->SetOptStat(0);
 
@@ -95,7 +43,7 @@ int plotscript(int argc, char* argv[]){
     }
 
 
-    leg_a->Draw("same");
+    legends::legend_smaller->Draw("same");
     cv->Print("mom_efficiency.pdf");
 
 
@@ -108,11 +56,7 @@ int plotscript(int argc, char* argv[]){
     eff_n_true.Draw("same,P");
 
 
-    TLegend * leg_b = new TLegend(0.2,0.27, 0.5, 0.5);
-    leg_b -> SetLineWidth(1);
-    makeLegEntry(leg_b,global::defaultOCLabel,"l",global::defaultOCColour);
-    makeLegEntry(leg_b,global::defaultClassicLabel,"l",global::defaultClassicColour);
-    leg_b->Draw("same");
+    legends::legend_simplest->Draw("same");
 
     cv->Print("N_efficiency.pdf");
 
@@ -133,12 +77,7 @@ int plotscript(int argc, char* argv[]){
     resolution5_10.Draw("same","PF");
     resolution10_15.Draw("same","PF");
 
-    TLegend * leg_c = new TLegend(0.6,0.6, 0.85, 0.85);
-    leg_c -> SetLineWidth(1);
-    makeLegEntry(leg_c,"1-5 particles","l",kBlack,3);
-    makeLegEntry(leg_c,"6-10 particles","l",kBlack,2);
-    makeLegEntry(leg_c,"10-15 particles","l",kBlack,1);
-    leg_c->Draw("same");
+
 
     cv->Print("resolution_pf.pdf");
 
@@ -146,7 +85,7 @@ int plotscript(int argc, char* argv[]){
     resolution1_5.Draw("same","OC");
     resolution5_10.Draw("same","OC");
     resolution10_15.Draw("same","OC");
-    leg_c->Draw("same");
+    legends::legend_onlyn->Draw("same");
 
     cv->Print("resolution_oc.pdf");
 
@@ -184,10 +123,51 @@ int plotscript(int argc, char* argv[]){
     variance5_10.Draw("same","");
     variance10_15.Draw("same","");
 
-    placeLegend(leg_a2, 0.2, 0.55);
-    leg_a2->Draw("same");
+    placeLegend(legends::legend_full, 0.2, 0.55);
+    legends::legend_full->Draw("same");
 
     cv->Print("variance.pdf");
+
+    compareProfile elec_variance1_5("(reco_e/true_e - 1)**2:true_e",  "!true_id && abs(reco_e/true_e - 1)<0.1 && is_true && is_reco && n_true <= 5",10,0,200,"p(t) [GeV]","Variance");
+    compareProfile elec_variance5_10("(reco_e/true_e - 1)**2:true_e", "!true_id && abs(reco_e/true_e - 1)<0.1 &&is_true && is_reco && n_true <= 10 && n_true>5",10,0,200,"True momentum [GeV]","Variance");
+    compareProfile elec_variance10_15("(reco_e/true_e - 1)**2:true_e","!true_id && abs(reco_e/true_e - 1)<0.1 &&is_true && is_reco && n_true <= 15 && n_true>10",10,0,200,"True momentum [GeV]","Variance");
+
+    elec_variance1_5.setOCLineColourAndStyle(-1,3);
+    elec_variance1_5.setClassicLineColourAndStyle(-1,3);
+    elec_variance5_10.setOCLineColourAndStyle(-1,2);
+    elec_variance5_10.setClassicLineColourAndStyle(-1,2);
+
+    elec_variance1_5.DrawAxes();
+    elec_variance1_5.AxisHisto()->GetYaxis()->SetRangeUser(0.,0.003);
+    elec_variance1_5.Draw("same","");
+    elec_variance5_10.Draw("same","");
+    elec_variance10_15.Draw("same","");
+
+    placeLegend(legends::legend_full, 0.2, 0.55);
+    legends::legend_full->Draw("same");
+
+    cv->Print("elec_variance.pdf");
+
+    compareProfile gamma_variance1_5("(reco_e/true_e - 1)**2:true_e",  "true_id && abs(reco_e/true_e - 1)<0.1 && is_true && is_reco && n_true <= 5",10,0,200,"p(t) [GeV]","Variance");
+    compareProfile gamma_variance5_10("(reco_e/true_e - 1)**2:true_e", "true_id && abs(reco_e/true_e - 1)<0.1 &&is_true && is_reco && n_true <= 10 && n_true>5",10,0,200,"True momentum [GeV]","Variance");
+    compareProfile gamma_variance10_15("(reco_e/true_e - 1)**2:true_e","true_id && abs(reco_e/true_e - 1)<0.1 &&is_true && is_reco && n_true <= 15 && n_true>10",10,0,200,"True momentum [GeV]","Variance");
+
+    gamma_variance1_5.setOCLineColourAndStyle(-1,3);
+    gamma_variance1_5.setClassicLineColourAndStyle(-1,3);
+    gamma_variance5_10.setOCLineColourAndStyle(-1,2);
+    gamma_variance5_10.setClassicLineColourAndStyle(-1,2);
+
+    gamma_variance1_5.DrawAxes();
+    gamma_variance1_5.AxisHisto()->GetYaxis()->SetRangeUser(0.,0.006);
+    gamma_variance1_5.Draw("same","");
+    gamma_variance5_10.Draw("same","");
+    gamma_variance10_15.Draw("same","");
+
+    placeLegend(legends::legend_full, 0.6, 0.55);
+    legends::legend_full->Draw("same");
+
+    cv->Print("gamma_variance.pdf");
+
 
     compareTH1D outside_var1_5("true_e","1./1000.*(abs(reco_e/true_e - 1)>0.1 && is_true && is_reco && n_true <= 5)",10,0,200,"True momentum [GeV]","Fraction with |p(r)/p(t) - 1| > 0.1 [%]");
     compareTH1D outside_var5_10("true_e","1./1000.*(abs(reco_e/true_e - 1)>0.1 &&is_true && is_reco && n_true <= 10 && n_true>5)",10,0,200,"True momentum [GeV]","Misidentified fraction [%]");
@@ -204,8 +184,8 @@ int plotscript(int argc, char* argv[]){
     outside_var5_10.Draw("same","");
     outside_var10_15.Draw("same","");
 
-    placeLegend(leg_a2, 0.6, 0.55);
-    leg_a2->Draw("same");
+    placeLegend(legends::legend_full, 0.6, 0.55);
+    legends::legend_full->Draw("same");
 
     cv->Print("misidentified.pdf");
 

@@ -12,6 +12,22 @@
 #
 #
 
+
+
+# standard PF as in paper: one track per ECal cluster, discard rest
+#
+#
+# Here: also check other tracks and split cluster multiple times if needed
+#
+#
+#
+
+
+
+
+
+
+
 import numpy as np
 from numba import jit
 
@@ -59,9 +75,10 @@ class calo_cluster(object):
 
 
 class pf_track(object):
-    def __init__(self,energy,pos):
+    def __init__(self,energy,pos,track_idx):
         self.energy=energy
         self.position=pos
+        self.track_idx=track_idx
         
     def rel_resolution(self):
         pt=self.energy
@@ -71,7 +88,7 @@ class pf_track(object):
 class pfCandidate(calo_cluster):
     def __init__(self,energy=-1,pos=[0.,0.]):
         calo_cluster.__init__(self,energy,pos, auto_correct=False)
-        
+        self.track_idx=-1
     
     def create_from_link(self, calocluster, pftrack=None):
         if pftrack is None:
@@ -80,8 +97,8 @@ class pfCandidate(calo_cluster):
             return None
         else: #use a weighted mean
             
-            self.position = 1./(2+1)*(2.*pftrack.position+calocluster.position)
-            
+            self.position = 1./(4+1)*(4.*pftrack.position+calocluster.position)
+            self.track_idx = pftrack.track_idx
             t = pftrack.energy
             dt = pftrack.rel_resolution()
             c = calocluster.energy
@@ -89,6 +106,7 @@ class pfCandidate(calo_cluster):
             
             if abs(t-c) > math.sqrt((c*dc)**2+(t*dt)**2): #incompatible, create second pf candidate
                 self.energy = t #use track momentum
+                self.position = pftrack.position
                 neutral_cand = pfCandidate(c-t, calocluster.position)
                 if c-t > 0.5:
                     return neutral_cand
@@ -284,61 +302,99 @@ def create_pf_tracks(tracks):
     intracks = np.reshape(tracks, [-1,tracks.shape[-1]])
     for i_t in range(len(intracks)):
         if intracks[i_t][0] < 1: continue
-        out_tracks.append(pf_track(intracks[i_t][0],intracks[i_t,1:3]))
+        out_tracks.append(pf_track(intracks[i_t][0],intracks[i_t,1:3],i_t+16*16))#calo offset
     return out_tracks
 
 @jit(nopython=True)  
-def c_perform_linking(cluster_positions, track_positions, track_matched):
+def c_perform_linking(cluster_positions, track_positions, track_matched, standardPF=False):
     
     matching=[] #i_cluster, i_track
     for i_c in range(len(cluster_positions)):
         best_distancesq = 1e3**2
         best_track = -1
+        other_tracks=[]
+        use_other_tracks=[]
         for i_t in range(len(track_positions)):
             distsq = (cluster_positions[i_c][0]-track_positions[i_t][0])**2 + (cluster_positions[i_c][1]-track_positions[i_t][1])**2
             if distsq > cellsize**2: continue
+            other_tracks.append(i_t)
             if best_distancesq < distsq: continue
             best_track = i_t
             best_distancesq = distsq
         if best_track >=0 :
             track_matched[best_track] = True
-        matching.append([i_c, best_track])
+            if not standardPF:
+                for i in range(len(other_tracks)):
+                    if not other_tracks[i]==best_track:
+                        use_other_tracks.append(other_tracks[i])
+                        track_matched[other_tracks[i]]=True
+        
+        if best_track>=0:
+            matching.append([i_c, best_track]+use_other_tracks)
+        else:
+            matching.append([i_c])
    
     return matching, track_matched
     
 #works on an event by event basis
 #clusters are calo_cluster objects, tracks are pf_track objects
 #returns list of candidates directly
-def perform_linking(clusters, tracks):
+def perform_linking(clusters, tracks, standardPF=True):
     
     cluster_positions = np.array([c.position for c in clusters])
     track_positions = np.array([t.position for t in tracks])
     track_matched = np.array([False for i in range(len(tracks))])
     matching=[]
     if len(tracks):
-        matching, track_matched = c_perform_linking(cluster_positions, track_positions, track_matched)
+        matching, track_matched = c_perform_linking(cluster_positions, track_positions, track_matched, standardPF)
     else:
-        matching = [[i,-1] for i in range(len(cluster_positions))]
+        matching = [[i] for i in range(len(cluster_positions))]
         
     particles = []
     for m in matching:
-        pfc = pfCandidate()
-        cand2=None
-        if m[1]>=0:
-            cand2 = pfc.create_from_link(clusters[m[0]], tracks[m[1]])
+        
+        add_cands=[]
+        cluster = clusters[m[0]]
+        if len(m)>1:
+            for i in range(1,len(m)):
+                pfc = pfCandidate()
+                cand2 = pfc.create_from_link(cluster, tracks[m[i]])
+                particles.append(pfc)
+                if cand2 is None:
+                    break
+                cluster = cand2
+                if standardPF:
+                    particles.append(cand2)
+                    break #only first track
+                if i==len(m)-1:
+                    particles.append(cand2)
+                
+                
+                
+        #if m[1]>=0:
+        #    cand2 = pfc.create_from_link(cluster, tracks[m[1]])
+        #    if cand2 is not None:
+        #        if standardPF:
+        #            add_cands.append(cand2)
+        #        else: #split further
+        #            for i in range(2,len(m)):
+        #                
         else:
+            pfc = pfCandidate()
             pfc.create_from_link(clusters[m[0]])
+            particles.append(pfc)
             
         particles.append(pfc)
-        if cand2 is not None:
-            particles.append(cand2)
+        if len(add_cands):
+            particles += add_cands
             
     #non matched tracks
-    for i in range(len(track_matched)):
-        if track_matched[i] : continue
-        pfc = pfCandidate()
-        pfc.create_from_link(tracks[i])
-        particles.append(pfc)
+    if not standardPF:
+        for i in range(len(track_matched)):
+            if track_matched[i] : continue
+            pfc = pfCandidate()
+            pfc.create_from_link(tracks[i])
+            particles.append(pfc)
             
     return particles
     

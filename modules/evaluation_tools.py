@@ -23,70 +23,129 @@ tracker_pos_res = 22./4.
 
 #matches reco to truth, per event
 @jit(nopython=True)     
-def c_find_best_matching_truth(pf_pos, pf_energy, t_Mask, t_pos, t_E, t_objidx,t_ID, rest_t_objidx, pos_tresh):
+def c_find_best_matching_truth(pf_pos, pf_energy, pf_tidxs, t_Mask, t_pos, t_E, t_objidx,t_ID, rest_t_objidx, pos_tresh, en_thresh):
     # flags any used truth index with -1
     # returns per pf matched truth info. for non matched, returns -1
     
-    matched_id = []
-    matched_e = []
-    matched_pos = []
     
+    #
+    #
+    # mask truth already used
+    # save matching distance (without energy criterion)
+    #
+    # 
+    #
+    #
+    # get unique truth only.
+    # make sort of simultaneous matching, minimise distance (inkl energy) for all at once. 
+    #
+    # match all with pf_tidx>=0 first
+    #
+    # or use the ML truth. If track belongs to pf candidate -> unambiguous; mask out
+    # then do cell matching with closest cell
+    # 
+
+    
+    
+    
+    #first iteration for direct matching
+    pf_ismatched = [False for _ in range(len(pf_pos))]
+    matched_id = [0 for _ in range(len(pf_pos))]
+    matched_e = [0. for _ in range(len(pf_pos))]
+    matched_posx = [0. for _ in range(len(pf_pos))]
+    matched_posy = [0. for _ in range(len(pf_pos))]
+    matched_tidxs = [-1 for _ in range(len(pf_pos))]
+    
+    t_ismatched=[]
     
     for i_pf in range(len(pf_pos)):
         pf_x = pf_pos[i_pf][0]
         pf_y = pf_pos[i_pf][1]
         pf_e = pf_energy[i_pf]
+        pf_tidx = pf_tidxs[i_pf]
         
-        
-        bestmatch_idx=-1
-        bestmatch_distance_sq = 2*pos_tresh**2+1e6
-        bestmatch_energy_diff=1000
-        bestmatch_energy = -1.
-        bestmatch_posx = -999.
-        bestmatch_posy = -999.
-        bestmatch_id = -1
-        
+
+        #first see if a direct match can be found
         for i_t in range(len(t_pos)):
-            t_x = t_pos[i_t][0]
-            t_y = t_pos[i_t][1]
-            t_e = t_E[i_t][0]
-            t_mask = t_Mask[i_t][0]
-            if t_mask < 1:
-                continue #noise
-            t_idx = t_objidx[i_t][0]
-            t_id = t_ID[i_t][0]
+            if pf_tidx == i_t: #match
+                # fill all the stuff
+                matched_id[i_pf]    = t_ID[i_t][0]
+                matched_e[i_pf]     = t_E[i_t][0]
+                matched_posx[i_pf]   = t_pos[i_t][0]
+                matched_posy[i_pf]   = t_pos[i_t][1]
+                matched_tidxs[i_pf] = t_objidx[i_t][0]
+                
+                t_ismatched.append(t_objidx[i_t][0])
+                #also flag this truth index as matched
+                pf_ismatched[i_pf]=True
+                break
+    
+    #determine remaining truth
+    
+    s_t_xs = []
+    s_t_ys = []
+    s_t_es = []
+    s_t_ids = []
+    s_t_tidx = []
+    
+    for i_t in range(len(t_pos)):
+        t_mask = t_Mask[i_t][0]
+        if t_mask < 1:
+            continue
+        t_idx = t_objidx[i_t][0]
+        if t_idx in s_t_tidx: continue
+        if t_idx in t_ismatched: continue
+        s_t_xs.append(t_pos[i_t][0])
+        s_t_ys.append(t_pos[i_t][1])
+        s_t_es.append(t_E[i_t][0])
+        s_t_ids.append(t_ID[i_t][0])
+        s_t_tidx.append(t_idx)
             
+    
+    #determine matching here  
+    for i_pf in range(len(pf_pos)):
+        if pf_ismatched[i_pf]: continue #already matched
+        pf_x = pf_pos[i_pf][0]
+        pf_y = pf_pos[i_pf][1]
+        pf_e = pf_energy[i_pf]
+        
+        bestmatch_distance_sq = 2*pos_tresh**2+1e6
+        bestmatch_idx=-1
+        
+        for i_t in range(len(s_t_xs)):
+            t_x = s_t_xs[i_t]
+            t_y = s_t_ys[i_t]
+            t_e = s_t_es[i_t]
+            t_idx = s_t_tidx[i_t]
+            t_id = s_t_ids[i_t]
             
             dist_sq = (pf_x-t_x)**2 + (pf_y-t_y)**2
-            abs_energy_diff = abs(t_e - pf_e)
-            
             if dist_sq > pos_tresh**2 : continue
             
-            #get to about 22^2 contribution for 5 % relative momentum difference (3 sigma-ish)
-            dist_sq += (22./0.1)**2 * (pf_e/t_e -1)**2
-            
-            #if abs(dist_sq - bestmatch_distance_sq) < 0.001**2: #same position check for energy
-            #    if bestmatch_energy_diff < abs_energy_diff: continue
+            endiffsq = (pf_e/t_e -1)**2
+            if endiffsq > en_thresh**2: continue
+            dist_sq += (22./0.1)**2 * endiffsq
             if bestmatch_distance_sq < dist_sq : continue
-                
-            bestmatch_distance_sq = dist_sq
-            bestmatch_energy_diff = abs_energy_diff
-            bestmatch_idx = t_idx
-            bestmatch_energy = t_e
-            bestmatch_posx = t_x
-            bestmatch_posy = t_y
-            bestmatch_id = t_id
-         
-        matched_id.append(bestmatch_id)    
-        matched_e.append(bestmatch_energy)
-        matched_pos.append([bestmatch_posx,bestmatch_posy])
-        if bestmatch_idx>=0: #truth match
-            for i_iidx in range(len(rest_t_objidx)):
-                if bestmatch_idx == rest_t_objidx[i_iidx]:
-                    rest_t_objidx[i_iidx] = -1
             
-        
+            bestmatch_idx=i_t
             
+        if bestmatch_idx>=0:
+            pf_ismatched[i_pf] = True
+            matched_id[i_pf]    = s_t_ids[bestmatch_idx] 
+            matched_e[i_pf]     = s_t_es[bestmatch_idx]
+            matched_posx[i_pf]   = s_t_xs[i_t]
+            matched_posy[i_pf]   = s_t_ys[i_t] 
+            matched_tidxs[i_pf] = s_t_tidx[bestmatch_idx] 
+            t_ismatched.append(s_t_tidx[bestmatch_idx])
+            
+    
+    
+    #leave only not matched 
+    for i_iidx in range(len(rest_t_objidx)):
+        if rest_t_objidx[i_iidx] in t_ismatched:
+            rest_t_objidx[i_iidx] = -1
+    
+    
     not_recoed_pos=[]
     not_recoed_e=[] 
     not_recoed_id=[]
@@ -111,7 +170,7 @@ def c_find_best_matching_truth(pf_pos, pf_energy, t_Mask, t_pos, t_E, t_objidx,t
             
         
             
-    return matched_pos, matched_e, matched_id, not_recoed_pos, not_recoed_e, not_recoed_id
+    return matched_posx, matched_posy, matched_e, matched_id, not_recoed_pos, not_recoed_e, not_recoed_id
     
     
 def multi_expand_dims(alist, axis):
@@ -140,25 +199,26 @@ def make_evaluation_dict(array):
 
 
 #takes one event
-def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.): #two ecal cells
+def find_best_matching_truth_and_format(pf_pos, pf_energy, pf_tidx, truth): #two ecal cells
     
     '''
     returns p particle: is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id
     '''
-    
+    pos_tresh=2*22.
+    en_thresh=.5 #150% wrong energy
     d = make_particle_inference_dict(None, None, np.expand_dims(truth,axis=0))
     
     
     rest_t_objidx = np.unique(d['t_objidx'][0])
     n_true = float(len(rest_t_objidx)-1.)
-    matched_pos, matched_e, matched_id, not_recoed_pos, not_recoed_e, not_recoed_id = c_find_best_matching_truth(pf_pos, 
-                                                                     pf_energy, 
-                                                                     d['t_mask'][0],d['t_pos'][0], d['t_E'][0], d['t_objidx'][0], d['t_ID'][0],
-                                                                     rest_t_objidx, pos_tresh)
+    #pf_pos, pf_energy, pf_tidxs, t_Mask, t_pos, t_E, t_objidx,t_ID, rest_t_objidx, pos_tresh, en_thresh
+    matched_posx, matched_posy, matched_e, matched_id, not_recoed_pos, not_recoed_e, not_recoed_id = c_find_best_matching_truth(
+        pf_pos, pf_energy, pf_tidx, d['t_mask'][0],d['t_pos'][0], d['t_E'][0], d['t_objidx'][0], d['t_ID'][0],
+                                                                     rest_t_objidx, pos_tresh, en_thresh)
     
     
     
-    matched_posx,matched_posy    = np.array(matched_pos)[:,0], np.array(matched_pos)[:,1]
+    matched_posx,matched_posy    = np.array(matched_posx) , np.array(matched_posy)
     matched_e      = np.array(matched_e)
     matched_id     = np.array(matched_id)
     
@@ -193,10 +253,26 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, truth, pos_tresh=22.)
         all_not_recoed = np.pad(all_not_recoed, [(0,0),(4,0)], mode='constant', constant_values=0)
         all_recoed = np.concatenate([all_recoed,all_not_recoed],axis=0)
     
-    # particle: is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id
+    # particle: is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id, n_true
     return all_recoed
    
+
+def determine_event_properties(event_particles):
     
+    jet_mass_r = np.sum(event_particles[:,0]*event_particles[:,3])
+    jet_mass_t = np.sum(event_particles[:,4]*event_particles[:,7])
+    n_part = event_particles[0,9]
+    
+    p_imbalance_x_r = np.sum(event_particles[:,0]*event_particles[:,1]*event_particles[:,3])
+    p_imbalance_x_t = np.sum(event_particles[:,4]*event_particles[:,5]*event_particles[:,7])
+    
+    return np.array([[jet_mass_r, p_imbalance_x_r, jet_mass_t, p_imbalance_x_t, n_part]],dtype='float32')
+
+def write_event_output_tree(allevents, outputFile):
+    from root_numpy import array2root
+    out = np.core.records.fromarrays(allevents.transpose() ,names="jet_mass_r, p_imbalance_x_r, jet_mass_t, p_imbalance_x_t, n_true")
+    array2root(out, outputFile+"_events.root", 'tree')    
+     
     
 def write_output_tree(allparticles, outputFile):
     from root_numpy import array2root

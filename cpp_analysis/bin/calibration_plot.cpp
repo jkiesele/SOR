@@ -14,14 +14,6 @@
 
 #include "../interface/globals.h"
 
-
-TCanvas * createCanvas(){
-    TCanvas * cv = new TCanvas();
-    cv->SetBottomMargin(0.15);
-    cv->SetLeftMargin(0.15);
-    return cv;
-}
-
 int main(int argc, char* argv[]){
     //if(argc<2) return -1;
 

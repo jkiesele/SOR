@@ -14,18 +14,77 @@
 #include "TLegendEntry.h"
 #include "TProfile.h"
 
-template<class T>
-class comparePlotWithAxes {
+#include "TTreeReader.h"
+#include "TTreeReaderValue.h"
+
+namespace legends{
+extern TLegend* legend_full;
+extern TLegend* legend_smaller;
+extern TLegend* legend_onlyn;
+extern TLegend* legend_simplest;
+void buildLegends();
+}
+
+TCanvas * createCanvas();
+
+class baseplotter{
 public:
-    comparePlotWithAxes(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin,
+    baseplotter(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin,
             TString xaxis, TString yaxis){
-        axes_=0;
-        classic_o_=0;
-        oc_o_=0;
         objstr_="";
         objstr_+=counter;
         counter++;
+        axes_=0;
         createAxes(nbins,minbin,maxbin,xaxis,yaxis);
+    }
+
+    void DrawAxes(){
+        axes_->Draw("AXIS");
+    }
+
+    TH1D* AxisHisto(){return axes_;}
+protected:
+    TH1D* axes_;
+    TString objstr_;
+    void createAxes(int nbins, double minbin, double maxbin,TString xaxis, TString yaxis){
+        if (axes_)
+            delete axes_;
+        axes_ = new TH1D("axis"+objstr_,"axis"+objstr_,nbins,minbin,maxbin);
+
+        axes_->GetXaxis()->SetTitle(xaxis);
+        axes_->GetYaxis()->SetTitle(yaxis);
+        axes_->GetYaxis()->SetTitleOffset(1.45);
+
+        axes_->GetXaxis()->SetLabelSize(0.05);
+        axes_->GetYaxis()->SetLabelSize(0.05);
+        axes_->GetXaxis()->SetTitleSize(0.05);
+        axes_->GetYaxis()->SetTitleSize(0.05);
+
+    }
+    void mergeOverflows(TH1D* h)const{
+        auto UF = h->GetBinContent(0);
+        h->SetBinContent(1,UF+h->GetBinContent(1));
+        auto OF = h->GetBinContent(h->GetNbinsX()+1);
+        h->SetBinContent(h->GetNbinsX(),OF+h->GetBinContent(h->GetNbinsX()));
+    }
+private:
+
+    static int counter;
+};
+
+
+
+template<class T>
+class comparePlotWithAxes: public baseplotter {
+public:
+    comparePlotWithAxes(TString var, TString selection, TString selectionpass,
+            int nbins, double minbin, double maxbin, TString xaxis,
+            TString yaxis) :
+            baseplotter(var, selection, selectionpass, nbins, minbin, maxbin,
+                    xaxis, yaxis) {
+
+        classic_o_ = 0;
+        oc_o_ = 0;
     }
     virtual ~comparePlotWithAxes(){
         delete classic_o_;
@@ -63,9 +122,6 @@ public:
         }
 
     }
-    void DrawAxes(){
-        axes_->Draw("AXIS");
-    }
 
     void setStyleDefaults(){
         (classic_o_)->SetLineColor(global::defaultClassicColour);
@@ -75,37 +131,61 @@ public:
     }
 
 
-    TH1D* AxisHisto(){return axes_;}
 
-private:
-
-    static int counter;
 protected:
 
     T* classic_o_;
     T* oc_o_;
-    TH1D* axes_;
-    void createAxes(int nbins, double minbin, double maxbin,TString xaxis, TString yaxis){
-        if (axes_)
-            delete axes_;
-        axes_ = new TH1D("axis"+objstr_,"axis"+objstr_,nbins,minbin,maxbin);
 
-        axes_->GetXaxis()->SetTitle(xaxis);
-        axes_->GetYaxis()->SetTitle(yaxis);
-        axes_->GetYaxis()->SetTitleOffset(1.45);
-
-        axes_->GetXaxis()->SetLabelSize(0.05);
-        axes_->GetYaxis()->SetLabelSize(0.05);
-        axes_->GetXaxis()->SetTitleSize(0.05);
-        axes_->GetYaxis()->SetTitleSize(0.05);
-
-    }
-    TString objstr_;
     std::vector<TObject*> otherobj_;
 
 };
-template<class T>
-int comparePlotWithAxes<T>::counter=0;
+
+class compareJetMass:public comparePlotWithAxes<TH1D> {
+public:
+    compareJetMass(int nbins, double minbin, double maxbin, TString xaxis, TString yaxis, int ntruemin=1, int ntruemax=-1):
+        comparePlotWithAxes("","","",nbins,minbin,maxbin,xaxis,yaxis),
+        ntruemin_(ntruemin),ntruemax_(ntruemax)
+        {
+        createObj("","","",nbins,minbin,maxbin);
+
+        setStyleDefaults();
+    }
+
+    void createObj(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin) override {
+
+        classic_o_ = loop(global::classic_event_tree, "cl"+objstr_,nbins,minbin,maxbin);
+        oc_o_ = loop(global::oc_event_tree, "oc"+objstr_,nbins,minbin,maxbin);
+
+        mergeOverflows(classic_o_);
+        mergeOverflows(oc_o_);
+
+        AxisHisto()->GetYaxis()->SetRangeUser(oc_o_->GetMaximum()*1e-9, oc_o_->GetMaximum()*1.1);
+    }
+
+private:
+    TH1D * loop(TTree* t, TString histname, int nbins, double minbin, double maxbin) const{
+        TH1D * h = new TH1D(histname,histname, nbins,minbin,maxbin);
+
+        TTreeReader myReader(t);
+        TTreeReaderValue<float> m_r(myReader, "jet_mass_r");
+        TTreeReaderValue<float> m_t(myReader, "jet_mass_t");
+        TTreeReaderValue<float> n_true(myReader, "n_true");
+        while (myReader.Next()) {
+            if(ntruemin_<ntruemax_){
+                if(*n_true >= ntruemax_) continue;
+                if(*n_true < ntruemin_) continue;
+            }
+
+            double ratio = *m_r/ *m_t;
+            h->Fill(ratio);
+        }
+        return h;
+    }
+    float ntruemin_;
+    float ntruemax_;
+
+};
 
 
 class compareEfficiency: public comparePlotWithAxes<TEfficiency> {
@@ -173,12 +253,7 @@ public:
 
     }
 private:
-    void mergeOverflows(TH1D* h){
-        auto UF = h->GetBinContent(0);
-        h->SetBinContent(1,UF+h->GetBinContent(1));
-        auto OF = h->GetBinContent(h->GetNbinsX()+1);
-        h->SetBinContent(1,OF+h->GetBinContent(h->GetNbinsX()));
-    }
+
 };
 
 
@@ -211,7 +286,7 @@ public:
 TLegendEntry * makeLegEntry(TLegend* leg, TString name, TString option, int col, int style=-1);
 
 
-void placeLegend(TLegend* leg, double x1, double y1, double x2=-1, double y2=-1);
+TLegend* placeLegend(TLegend* leg, double x1, double y1, double x2=-1, double y2=-1);
 
 
 
