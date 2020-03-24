@@ -21,6 +21,9 @@ from DeepJetCore.TrainData import TrainData
 allparticles=[]
 evt_prop=[]
 
+nparticles=0
+names=""
+
 with open(args.inputFile) as file:
     for inputfile in file:
         inputfile = inputfile.replace('\n', '')
@@ -59,17 +62,24 @@ with open(args.inputFile) as file:
             
             arr=find_best_matching_truth_and_format(ev_reco_pos, ev_reco_E, pf_tidx, ev_truth)
             
-            ev_pro = determine_event_properties(arr)
+            ev_pro, names = determine_event_properties(arr)
             #print(arr.shape)
             return (arr, ev_pro)
-            
-        #for event in range(len(calo)):
-        #    allparticles.append(run_event(event))
+         
+        out = []   
+        useMP=True
+        
+        if useMP:
+            from multiprocessing import Pool
+            p = Pool(8)
+            out = p.map(run_event,range(calo.shape[0])) 
+            p.close()
+        else:
+            for event in range(len(calo)):
+               out.append(run_event(event))
         #break    
         
-        from multiprocessing import Pool
-        p = Pool()
-        out = p.map(run_event,range(calo.shape[0])) 
+        
  
         allparticles+=[p[0] for p in out]
         evt_prop+=[p[1] for p in out]
@@ -85,6 +95,7 @@ print('fake: ', float(np.count_nonzero( allparticles[:,0] *  (1.-allparticles[:,
 
 
 write_output_tree(allparticles, args.outputFile)
-write_event_output_tree(evt_prop, args.outputFile)
+names = determine_event_properties(None)
+write_event_output_tree(evt_prop, names, args.outputFile)
 
 

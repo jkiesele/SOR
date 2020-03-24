@@ -51,7 +51,7 @@ def c_find_best_matching_truth(pf_pos, pf_energy, pf_tidxs, t_Mask, t_pos, t_E, 
     #first iteration for direct matching
     pf_ismatched = [False for _ in range(len(pf_pos))]
     matched_id = [0 for _ in range(len(pf_pos))]
-    matched_e = [0. for _ in range(len(pf_pos))]
+    matched_e = [-1. for _ in range(len(pf_pos))]
     matched_posx = [0. for _ in range(len(pf_pos))]
     matched_posy = [0. for _ in range(len(pf_pos))]
     matched_tidxs = [-1 for _ in range(len(pf_pos))]
@@ -67,6 +67,7 @@ def c_find_best_matching_truth(pf_pos, pf_energy, pf_tidxs, t_Mask, t_pos, t_E, 
 
         #first see if a direct match can be found
         for i_t in range(len(t_pos)):
+            if not t_Mask[i_t][0]: continue
             if pf_tidx == i_t: #match
                 # fill all the stuff
                 matched_id[i_pf]    = t_ID[i_t][0]
@@ -75,7 +76,7 @@ def c_find_best_matching_truth(pf_pos, pf_energy, pf_tidxs, t_Mask, t_pos, t_E, 
                 matched_posy[i_pf]   = t_pos[i_t][1]
                 matched_tidxs[i_pf] = t_objidx[i_t][0]
                 
-                t_ismatched.append(t_objidx[i_t][0])
+                t_ismatched.append(int(t_objidx[i_t][0]+0.1))
                 #also flag this truth index as matched
                 pf_ismatched[i_pf]=True
                 break
@@ -92,7 +93,7 @@ def c_find_best_matching_truth(pf_pos, pf_energy, pf_tidxs, t_Mask, t_pos, t_E, 
         t_mask = t_Mask[i_t][0]
         if t_mask < 1:
             continue
-        t_idx = t_objidx[i_t][0]
+        t_idx = int(t_objidx[i_t][0]+0.1)
         if t_idx in s_t_tidx: continue
         if t_idx in t_ismatched: continue
         s_t_xs.append(t_pos[i_t][0])
@@ -101,44 +102,79 @@ def c_find_best_matching_truth(pf_pos, pf_energy, pf_tidxs, t_Mask, t_pos, t_E, 
         s_t_ids.append(t_ID[i_t][0])
         s_t_tidx.append(t_idx)
             
+    # match the remaining truth -> reco
     
-    #determine matching here  
-    for i_pf in range(len(pf_pos)):
-        if pf_ismatched[i_pf]: continue #already matched
-        pf_x = pf_pos[i_pf][0]
-        pf_y = pf_pos[i_pf][1]
-        pf_e = pf_energy[i_pf]
+    for i_t in range(len(s_t_xs)):
+        t_idx = s_t_tidx[i_t]
+        if t_idx in t_ismatched: continue
+        t_x = s_t_xs[i_t]
+        t_y = s_t_ys[i_t]
+        t_e = s_t_es[i_t]
+        t_id = s_t_ids[i_t]
         
         bestmatch_distance_sq = 2*pos_tresh**2+1e6
         bestmatch_idx=-1
         
-        for i_t in range(len(s_t_xs)):
-            t_x = s_t_xs[i_t]
-            t_y = s_t_ys[i_t]
-            t_e = s_t_es[i_t]
-            t_idx = s_t_tidx[i_t]
-            t_id = s_t_ids[i_t]
+        for i_pf in range(len(pf_pos)):
+            if pf_ismatched[i_pf]: continue
+            pf_x = pf_pos[i_pf][0]
+            pf_y = pf_pos[i_pf][1]
+            pf_e = pf_energy[i_pf]
             
             dist_sq = (pf_x-t_x)**2 + (pf_y-t_y)**2
             if dist_sq > pos_tresh**2 : continue
-            
             endiffsq = (pf_e/t_e -1)**2
             if endiffsq > en_thresh**2: continue
-            dist_sq += (22./0.1)**2 * endiffsq
+            dist_sq += (22./0.05)**2 * endiffsq
             if bestmatch_distance_sq < dist_sq : continue
-            
-            bestmatch_idx=i_t
+            bestmatch_idx=i_pf
             
         if bestmatch_idx>=0:
-            pf_ismatched[i_pf] = True
-            matched_id[i_pf]    = s_t_ids[bestmatch_idx] 
-            matched_e[i_pf]     = s_t_es[bestmatch_idx]
-            matched_posx[i_pf]   = s_t_xs[i_t]
-            matched_posy[i_pf]   = s_t_ys[i_t] 
-            matched_tidxs[i_pf] = s_t_tidx[bestmatch_idx] 
-            t_ismatched.append(s_t_tidx[bestmatch_idx])
-            
+            pf_ismatched[bestmatch_idx] = True
+            matched_e[bestmatch_idx]     = s_t_es[i_t]
+            matched_posx[bestmatch_idx]   = s_t_xs[i_t]
+            matched_posy[bestmatch_idx]   = s_t_ys[i_t] 
+            matched_tidxs[bestmatch_idx] = s_t_tidx[i_t] 
+            t_ismatched.append(int(t_idx+0.1))
+        
     
+    #determine matching here  
+    #for i_pf in range(len(pf_pos)):
+    #    if pf_ismatched[i_pf]: continue #already matched
+    #    pf_x = pf_pos[i_pf][0]
+    #    pf_y = pf_pos[i_pf][1]
+    #    pf_e = pf_energy[i_pf]
+    #    
+    #    bestmatch_distance_sq = 2*pos_tresh**2+1e6
+    #    bestmatch_idx=-1
+    #    
+    #    for i_t in range(len(s_t_xs)):
+    #        t_idx = s_t_tidx[i_t]
+    #        if t_idx in t_ismatched: continue
+    #        t_x = s_t_xs[i_t]
+    #        t_y = s_t_ys[i_t]
+    #        t_e = s_t_es[i_t]
+    #        t_id = s_t_ids[i_t]
+    #        
+    #        dist_sq = (pf_x-t_x)**2 + (pf_y-t_y)**2
+    #        if dist_sq > pos_tresh**2 : continue
+    #        
+    #        endiffsq = (pf_e/t_e -1)**2
+    #        if endiffsq > en_thresh**2: continue
+    #        dist_sq += (22./0.025)**2 * endiffsq
+    #        if bestmatch_distance_sq < dist_sq : continue
+    #        
+    #        bestmatch_idx=i_t
+    #        
+    #    if bestmatch_idx>=0:
+    #        pf_ismatched[i_pf] = True
+    #        matched_id[i_pf]    = s_t_ids[bestmatch_idx] 
+    #        matched_e[i_pf]     = s_t_es[bestmatch_idx]
+    #        matched_posx[i_pf]   = s_t_xs[i_t]
+    #        matched_posy[i_pf]   = s_t_ys[i_t] 
+    #        matched_tidxs[i_pf] = s_t_tidx[bestmatch_idx] 
+    #        t_ismatched.append(int(s_t_tidx[bestmatch_idx]+0.1))
+            
     
     #leave only not matched 
     for i_iidx in range(len(rest_t_objidx)):
@@ -204,8 +240,8 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, pf_tidx, truth): #two
     '''
     returns p particle: is_reco, reco_posx, reco_posy, reco_e, is_true, true_posx, true_posy, true_e, true_id
     '''
-    pos_tresh=2*22.
-    en_thresh=.5 #150% wrong energy
+    pos_tresh=3*22.
+    en_thresh=0.9 #150% wrong energy
     d = make_particle_inference_dict(None, None, np.expand_dims(truth,axis=0))
     
     
@@ -257,20 +293,75 @@ def find_best_matching_truth_and_format(pf_pos, pf_energy, pf_tidx, truth): #two
     return all_recoed
    
 
-def determine_event_properties(event_particles):
+def determine_event_properties(event_particles, calo_energy=None):
+    pufracs=[0.0, 0.2, 0.5, 0.8]
+    names=""
+    if event_particles is None:
+        for pufrac in pufracs:
+            pufracstr=str(pufrac)
+            if len(names):
+                names+=","
+            names+="jet_mass_r_pu"+pufracstr+", jet_mass_t_pu"+pufracstr+", p_imbalance_x_r_pu"+pufracstr+", p_imbalance_x_t_pu"+pufracstr
+        names+=',n_true, e_access_n'
+        return names
     
-    jet_mass_r = np.sum(event_particles[:,0]*event_particles[:,3])
-    jet_mass_t = np.sum(event_particles[:,4]*event_particles[:,7])
-    n_part = event_particles[0,9]
+    n_true = event_particles[0,9]
+    n_part = len(event_particles)
     
     p_imbalance_x_r = np.sum(event_particles[:,0]*event_particles[:,1]*event_particles[:,3])
     p_imbalance_x_t = np.sum(event_particles[:,4]*event_particles[:,5]*event_particles[:,7])
-    
-    return np.array([[jet_mass_r, p_imbalance_x_r, jet_mass_t, p_imbalance_x_t, n_part]],dtype='float32')
 
-def write_event_output_tree(allevents, outputFile):
+    #simulate PU chs  using matched_id (8) and selecting a random fraction
+    
+    neutral_mask = event_particles[:,8] < 0.5 #everything not charged or without true match
+    rarr = np.random.rand(n_part)
+    
+    
+    out=[]
+    
+    for pufrac in pufracs:
+        sel = rarr >= pufrac
+        sel = np.logical_or(sel,neutral_mask) #always take neutrals
+        
+        jet_mass_r = np.sum(event_particles[:,0][sel]*event_particles[:,3][sel])
+        jet_mass_t = np.sum(event_particles[:,4][sel]*event_particles[:,7][sel])
+        
+        p_imbalance_x_r = np.sum(event_particles[:,0][sel]*event_particles[:,1][sel]*event_particles[:,3][sel])
+        p_imbalance_x_t = np.sum(event_particles[:,4][sel]*event_particles[:,5][sel]*event_particles[:,7][sel])
+        
+        out+=[jet_mass_r, jet_mass_t, p_imbalance_x_r, p_imbalance_x_t]
+        pufracstr=str(pufrac)
+        if len(names):
+            names+=","
+        names+="jet_mass_r_pu"+pufracstr+", jet_mass_t_pu"+pufracstr+", p_imbalance_x_r_pu"+pufracstr+", p_imbalance_x_t_pu"+pufracstr
+    
+    names+=',n_true, e_access_n'
+    
+    e_access_n = 0
+    if calo_energy is not None:
+        part_energy=np.sum(event_particles[:,0]*event_particles[:,3])
+        #print(calo_energy, part_energy)
+        e_access_n = max(0., calo_energy-part_energy)
+    
+    return np.array([out+[n_true, e_access_n]],dtype='float32'), names
+
+def event_properties_dict(prop):
+    out={}
+    out['jet_mass_r']=prop[:,0]
+    out['p_imbalance_x_r']=prop[:,1]
+    out['p_imbalance_x_t']=prop[:,3]
+    out['n_part']=prop[:,4]
+    out['n_true']=prop[:,4]
+    
+    out['jet_mass_r']=prop[:,0]
+    out['jet_mass_r']=prop[:,0]
+    out['jet_mass_r']=prop[:,0]
+    out['jet_mass_r']=prop[:,0]
+
+
+def write_event_output_tree(allevents, names, outputFile):
     from root_numpy import array2root
-    out = np.core.records.fromarrays(allevents.transpose() ,names="jet_mass_r, p_imbalance_x_r, jet_mass_t, p_imbalance_x_t, n_true")
+    out = np.core.records.fromarrays(allevents.transpose() ,names=names)
     array2root(out, outputFile+"_events.root", 'tree')    
      
     

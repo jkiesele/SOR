@@ -104,13 +104,20 @@ class pfCandidate(calo_cluster):
             c = calocluster.energy
             dc = calocluster.rel_resolution()
             
-            if abs(t-c) > math.sqrt((c*dc)**2+(t*dt)**2): #incompatible, create second pf candidate
+            combined_error=math.sqrt((c*dc)**2+(t*dt)**2)
+            
+            if c-t > combined_error: #incompatible, create second pf candidate
                 self.energy = t #use track momentum
                 self.position = pftrack.position
                 neutral_cand = pfCandidate(c-t, calocluster.position)
                 if c-t > 0.5:
                     return neutral_cand
+            elif t-c > combined_error: #larger track momentum
+                self.energy=calocluster.energy
+                self.position=calocluster.position
+                return None
                 
+            #what remains is if they are compatible, so here we are
             self.energy = 1/((t*dt)**(-2) + (c*dc)**(-2)) * (c/(c*dc)**2 +t/(t*dt)**2)
             
             return None
@@ -279,7 +286,7 @@ def c_match_cluster_to_truth(clusters, true_pos, true_en, truth_used):# per even
         for i_t in range(len(true_pos)):
             if truth_used[i_t]: continue
             this_L1_dist = abs(cl.position[0]-true_pos[i_t][0])+abs(cl.position[1]-true_pos[i_t][1])
-            if this_L1_dist < 22. and this_L1_dist < L1_dist:
+            if this_L1_dist < 2.*22. and this_L1_dist < L1_dist:
                  best_it=i_t
                  L1_dist=this_L1_dist
         if best_it>-1:
@@ -309,37 +316,48 @@ def create_pf_tracks(tracks):
 def c_perform_linking(cluster_positions, track_positions, track_matched, standardPF=False):
     
     matching=[] #i_cluster, i_track
-    for i_c in range(len(cluster_positions)):
-        best_distancesq = 1e3**2
-        best_track = -1
-        other_tracks=[]
-        use_other_tracks=[]
-        for i_t in range(len(track_positions)):
-            distsq = (cluster_positions[i_c][0]-track_positions[i_t][0])**2 + (cluster_positions[i_c][1]-track_positions[i_t][1])**2
-            if distsq > cellsize**2: continue
-            other_tracks.append(i_t)
-            if best_distancesq < distsq: continue
-            best_track = i_t
-            best_distancesq = distsq
-        if best_track >=0 :
-            track_matched[best_track] = True
-            if not standardPF:
-                for i in range(len(other_tracks)):
-                    if not other_tracks[i]==best_track:
-                        use_other_tracks.append(other_tracks[i])
-                        track_matched[other_tracks[i]]=True
-        
-        if best_track>=0:
-            matching.append([i_c, best_track]+use_other_tracks)
-        else:
-            matching.append([i_c])
+    if standardPF:
+        for i_c in range(len(cluster_positions)):
+            best_distancesq = 1e3**2
+            best_track = -1
+            other_tracks=[]
+            for i_t in range(len(track_positions)):
+                distsq = (cluster_positions[i_c][0]-track_positions[i_t][0])**2 + (cluster_positions[i_c][1]-track_positions[i_t][1])**2
+                if distsq > cellsize**2: continue
+                other_tracks.append(i_t)
+                if best_distancesq < distsq: continue
+                best_track = i_t
+                best_distancesq = distsq
+            if best_track >=0 :
+                track_matched[best_track] = True
+            
+            if best_track>=0:
+                matching.append([i_c, best_track])
+            else:
+                matching.append([i_c])
    
+    else:#match clusters to tracks
+        for i_c in range(len(cluster_positions)):
+            matching.append([i_c])
+        for i_t in range(len(track_positions)):
+            best_distancesq = 1e3**2
+            best_cl = -1
+            for i_c in range(len(cluster_positions)):
+                distsq = (cluster_positions[i_c][0]-track_positions[i_t][0])**2 + (cluster_positions[i_c][1]-track_positions[i_t][1])**2
+                if distsq > cellsize**2: continue
+                if best_distancesq < distsq: continue
+                best_distancesq = distsq
+                best_cl=i_c
+            if best_cl >=0:
+                track_matched[i_t] = True
+                matching[best_cl].append(i_t)
+                
     return matching, track_matched
     
 #works on an event by event basis
 #clusters are calo_cluster objects, tracks are pf_track objects
 #returns list of candidates directly
-def perform_linking(clusters, tracks, standardPF=True):
+def perform_linking(clusters, tracks, standardPF=False):
     
     cluster_positions = np.array([c.position for c in clusters])
     track_positions = np.array([t.position for t in tracks])
@@ -358,6 +376,10 @@ def perform_linking(clusters, tracks, standardPF=True):
         if len(m)>1:
             for i in range(1,len(m)):
                 pfc = pfCandidate()
+                if i > 1:
+                    pass
+                    #print('creating second part from cluster/track', cluster.energy, tracks[m[i]].energy)
+                    #print('previous particle', particles[-1].energy)
                 cand2 = pfc.create_from_link(cluster, tracks[m[i]])
                 particles.append(pfc)
                 if cand2 is None:
@@ -384,9 +406,6 @@ def perform_linking(clusters, tracks, standardPF=True):
             pfc.create_from_link(clusters[m[0]])
             particles.append(pfc)
             
-        particles.append(pfc)
-        if len(add_cands):
-            particles += add_cands
             
     #non matched tracks
     if not standardPF:

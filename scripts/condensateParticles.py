@@ -19,6 +19,7 @@ args=parser.parse_args()
 
 allparticles=[]
 all_ev_prop=[]
+names=""
 
 with open(args.inputFile) as file:
     for inputfile in file:
@@ -38,13 +39,15 @@ with open(args.inputFile) as file:
         
         pred_E   = d['f_E']* d['p_E_corr']
         pred_pos = d['f_pos'] + d['p_pos_offs']
+        calo_energy = None #not supported by data formet..
+        #np.sum(d['f_E'][:,0:16*16,0],axis=-1)#calo energy
         #loop over events here.. easier
         
         nevents = pred.shape[0]
         all_idxs = np.array([i for i in range(pred.shape[1])])
         
-        print('pred_pos',pred_pos.shape)
-        print('all_idxs',all_idxs.shape)
+        #print('pred_pos',pred_pos.shape)
+        #print('all_idxs',all_idxs.shape)
         
         for event in range(nevents):
             ev_pred_E    = pred_E[event][condensate_mask[event]>0][:,0]
@@ -55,7 +58,7 @@ with open(args.inputFile) as file:
             eventparticles = find_best_matching_truth_and_format(ev_pred_pos, ev_pred_E, ob_idx, ev_truth)
             allparticles.append(eventparticles)
             
-            ev_pro = determine_event_properties(eventparticles)
+            ev_pro, names = determine_event_properties(eventparticles, None)
             all_ev_prop.append(ev_pro)
     
     
@@ -69,7 +72,7 @@ print('efficiency: ', float(np.count_nonzero( allparticles[:,0] *  allparticles[
 print('fake: ', float(np.count_nonzero( allparticles[:,0] *  (1.-allparticles[:,4])))/float( np.count_nonzero(allparticles[:,0] ) ))
 
 write_output_tree(allparticles, args.outputFile)
-write_event_output_tree(all_ev_prop, args.outputFile)
+write_event_output_tree(all_ev_prop, names, args.outputFile)
 
 
 

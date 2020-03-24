@@ -20,8 +20,12 @@
 namespace legends{
 extern TLegend* legend_full;
 extern TLegend* legend_smaller;
+extern TLegend* legend_onlyex;
+extern TLegend* legend_onlyhi;
 extern TLegend* legend_onlyn;
 extern TLegend* legend_simplest;
+
+extern TLegend* legend_pu_00_02_08;
 void buildLegends();
 }
 
@@ -42,6 +46,11 @@ public:
         axes_->Draw("AXIS");
     }
 
+    void renameAxes(TString xaxis, TString yaxis){
+        axes_->GetXaxis()->SetTitle(xaxis);
+        axes_->GetYaxis()->SetTitle(yaxis);
+    }
+
     TH1D* AxisHisto(){return axes_;}
 protected:
     TH1D* axes_;
@@ -54,17 +63,21 @@ protected:
         axes_->GetXaxis()->SetTitle(xaxis);
         axes_->GetYaxis()->SetTitle(yaxis);
         axes_->GetYaxis()->SetTitleOffset(1.45);
+        axes_->GetXaxis()->SetTitleOffset(1.15);
 
         axes_->GetXaxis()->SetLabelSize(0.05);
         axes_->GetYaxis()->SetLabelSize(0.05);
         axes_->GetXaxis()->SetTitleSize(0.05);
         axes_->GetYaxis()->SetTitleSize(0.05);
 
+
     }
     void mergeOverflows(TH1D* h)const{
         auto UF = h->GetBinContent(0);
+        h->SetBinContent(0,0);
         h->SetBinContent(1,UF+h->GetBinContent(1));
         auto OF = h->GetBinContent(h->GetNbinsX()+1);
+        h->SetBinContent(h->GetNbinsX()+1,0);
         h->SetBinContent(h->GetNbinsX(),OF+h->GetBinContent(h->GetNbinsX()));
     }
 private:
@@ -79,10 +92,10 @@ class comparePlotWithAxes: public baseplotter {
 public:
     comparePlotWithAxes(TString var, TString selection, TString selectionpass,
             int nbins, double minbin, double maxbin, TString xaxis,
-            TString yaxis) :
+            TString yaxis, bool event=false) :
             baseplotter(var, selection, selectionpass, nbins, minbin, maxbin,
                     xaxis, yaxis) {
-
+        event_=event;
         classic_o_ = 0;
         oc_o_ = 0;
     }
@@ -138,53 +151,135 @@ protected:
     T* oc_o_;
 
     std::vector<TObject*> otherobj_;
-
+    bool event_;
 };
 
-class compareJetMass:public comparePlotWithAxes<TH1D> {
+class compareJetMassRes:public comparePlotWithAxes<TH1D> {
 public:
-    compareJetMass(int nbins, double minbin, double maxbin, TString xaxis, TString yaxis, int ntruemin=1, int ntruemax=-1):
+    compareJetMassRes(int nbins, double minbin, double maxbin, TString xaxis, TString yaxis,TString pu,bool offset):
         comparePlotWithAxes("","","",nbins,minbin,maxbin,xaxis,yaxis),
-        ntruemin_(ntruemin),ntruemax_(ntruemax)
+        offset_(offset)
         {
-        createObj("","","",nbins,minbin,maxbin);
+        createObj("",pu,"",nbins,minbin,maxbin);
 
         setStyleDefaults();
     }
 
-    void createObj(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin) override {
+    void setStyleDefaults(){
+        comparePlotWithAxes<TH1D>::setStyleDefaults();
+        (outliers_pf_)->SetLineColor(global::defaultClassicColour);
+        (outliers_pf_)->SetLineWidth(2);
+        (outliers_oc_)->SetLineColor(global::defaultOCColour);
+        (outliers_oc_)->SetLineWidth(2);
+    }
 
-        classic_o_ = loop(global::classic_event_tree, "cl"+objstr_,nbins,minbin,maxbin);
-        oc_o_ = loop(global::oc_event_tree, "oc"+objstr_,nbins,minbin,maxbin);
+    void setClassicLineColourAndStyle(int col,int style=-1000){
+        comparePlotWithAxes<TH1D>::setClassicLineColourAndStyle(col,style);
+        if(col>=0)
+            (outliers_pf_)->SetLineColor(col);
+        if(style>-1000)
+            (outliers_pf_)->SetLineStyle(style);
+    }
+    void setOCLineColourAndStyle(int col,int style=-1000){
+        comparePlotWithAxes<TH1D>::setOCLineColourAndStyle(col,style);
+        if(col>=0)
+            (outliers_oc_)->SetLineColor(col);
+        if(style>-1000)
+            (outliers_oc_)->SetLineStyle(style);
+    }
 
-        mergeOverflows(classic_o_);
-        mergeOverflows(oc_o_);
+    void createObj(TString var, TString pu, TString selectionpass, int nbins, double minbin, double maxbin) override {
+
+        classic_o_ = loop(global::classic_event_tree, "cl"+objstr_,nbins,minbin,maxbin,pu,outliers_pf_);
+        oc_o_ = loop(global::oc_event_tree, "oc"+objstr_,nbins,minbin,maxbin,pu,outliers_oc_);
+
+       // mergeOverflows(classic_o_);
+       // mergeOverflows(oc_o_);
+
 
         AxisHisto()->GetYaxis()->SetRangeUser(oc_o_->GetMaximum()*1e-9, oc_o_->GetMaximum()*1.1);
     }
 
+    TH1D* getOutlierFractionOC(){return outliers_oc_;}
+    TH1D* getOutlierFractionPF(){return outliers_pf_;}
+
 private:
-    TH1D * loop(TTree* t, TString histname, int nbins, double minbin, double maxbin) const{
-        TH1D * h = new TH1D(histname,histname, nbins,minbin,maxbin);
+    TH1D * loop(TTree* t, TString histname, int nbins, double minbin, double maxbin,TString pu,TH1D*& outliers_) const{
+
+
+
+        TH1D * h_av  = new TH1D(histname+"av",histname+"av", nbins,minbin,maxbin);
+        h_av->Sumw2(true);
+        TH1D * h_var = new TH1D(histname+"var",histname+"var", nbins,minbin,maxbin);
+        h_var->Sumw2(true);
+        TH1D * h_N = new TH1D(histname+"N",histname+"N", nbins,minbin,maxbin);
+        h_N->Sumw2(true);
+        outliers_ =  new TH1D(histname+"Nout",histname+"Nout", nbins,minbin,maxbin);
+        outliers_->Sumw2(true);
 
         TTreeReader myReader(t);
-        TTreeReaderValue<float> m_r(myReader, "jet_mass_r");
-        TTreeReaderValue<float> m_t(myReader, "jet_mass_t");
-        TTreeReaderValue<float> n_true(myReader, "n_true");
+        TTreeReaderValue<float> m_r(myReader, "jet_mass_r_"+pu);
+        TTreeReaderValue<float> m_t(myReader, "jet_mass_t_"+pu);
         while (myReader.Next()) {
-            if(ntruemin_<ntruemax_){
-                if(*n_true >= ntruemax_) continue;
-                if(*n_true < ntruemin_) continue;
+            if(! *m_t) continue;
+            double ratio = *m_r / *m_t;
+            if(fabs(ratio-1.)>0.8){
+                outliers_->Fill(*m_t);
+                continue;
             }
-
-            double ratio = *m_r/ *m_t;
-            h->Fill(ratio);
+            h_av->Fill(*m_t,ratio);
+            h_N->Fill(*m_t);
         }
-        return h;
-    }
-    float ntruemin_;
-    float ntruemax_;
+        for(int i=0;i<h_N->GetNbinsX()+2;i++){
+            if(h_N->GetBinContent(i) < 1){
+                h_N->SetBinContent(i,1.);
+                h_N->SetBinError(i,1.);
+            }
+            double norm = h_N->GetBinContent(i);
+            h_av->SetBinContent(i, h_av->GetBinContent(i) / norm);
+            h_av->SetBinError(i, h_av->GetBinError(i) / norm);
+            if(h_av->GetBinContent(i)!=h_av->GetBinContent(i)){
+                h_av->SetBinContent(i,1.);
+                h_av->SetBinError(i,1.);
+            }
+            outliers_->SetBinContent(i, outliers_->GetBinContent(i) / norm);
+            if(outliers_->GetBinContent(i)!=outliers_->GetBinContent(i)){
+                outliers_->SetBinContent(i,0.);
+                outliers_->SetBinError(i,0.);
+            }
+        }
+       // h_av->Divide(h_N);//h_av,h_N,1.,1.,"B");
 
+        myReader.Restart();
+        while (myReader.Next()) {
+            int bin=h_av->FindBin(*m_t);
+            if(! *m_t) continue;
+            double ratio = *m_r / *m_t;
+            if(fabs(ratio-1.)>0.8){
+                continue;
+            }
+            double var = (ratio - h_av->GetBinContent(bin));
+            var*=var;
+            h_var->Fill(*m_t, var);
+
+        }
+
+        h_var->Divide(h_N);//,1.,1.,"B");
+        for(int i=0; i<h_av->GetNbinsX()+1; i++){
+            if (h_var->GetBinContent(i) == h_var->GetBinContent(i)){//not nan
+                h_var->SetBinContent(i, sqrt(h_var->GetBinContent(i)));
+                h_var->SetBinError(i, sqrt(h_var->GetBinError(i)));
+            }
+            else
+                h_var->SetBinContent(i, 0);
+        }
+        if(offset_)
+            return h_av;
+        else
+            return h_var;
+    }
+    bool offset_;
+    TH1D* outliers_oc_,*outliers_pf_;
 };
 
 
@@ -230,8 +325,9 @@ private:
 
 class compareTH1D: public comparePlotWithAxes<TH1D> {
 public:
-    compareTH1D(TString var, TString selection, int nbins, double minbin, double maxbin, TString xaxis, TString yaxis):
-        comparePlotWithAxes(var,selection,"",nbins,minbin,maxbin,xaxis,yaxis){
+    compareTH1D(TString var, TString selection, int nbins, double minbin, double maxbin, TString xaxis, TString yaxis,bool normalize=true):
+        comparePlotWithAxes(var,selection,"",nbins,minbin,maxbin,xaxis,yaxis),
+        normalize_(normalize){
         createObj(var,selection,"",nbins,minbin,maxbin);
         setStyleDefaults();
     }
@@ -247,21 +343,26 @@ public:
         mergeOverflows(classic_o_);
         mergeOverflows(oc_o_);
 
+        if(normalize_){
+            classic_o_->Scale(1./classic_o_->Integral());
+            oc_o_->Scale(1./oc_o_->Integral());
+        }
+
         auto max=oc_o_->GetMaximum();
 
         AxisHisto()->GetYaxis()->SetRangeUser(0, max*1.1);
 
     }
 private:
-
+    bool normalize_;
 };
 
 
 
 class compareProfile: public comparePlotWithAxes<TProfile> {
 public:
-    compareProfile(TString var, TString selection, int nbins, double minbin, double maxbin, TString xaxis, TString yaxis):
-        comparePlotWithAxes(var,selection,"",nbins,minbin,maxbin,xaxis,yaxis){
+    compareProfile(TString var, TString selection, int nbins, double minbin, double maxbin, TString xaxis, TString yaxis,bool event=false):
+        comparePlotWithAxes(var,selection,"",nbins,minbin,maxbin,xaxis,yaxis,event){
         createObj(var,selection,"",nbins,minbin,maxbin);
         setStyleDefaults();
     }
@@ -271,14 +372,22 @@ public:
         classic_o_  = new TProfile("ha"+objstr_,"ha"+objstr_, nbins, minbin, maxbin);
         oc_o_       = new TProfile("hb"+objstr_,"hb"+objstr_, nbins, minbin, maxbin);
 
-        global::classic_tree->Draw(var+">>"+"ha"+objstr_,selection,"prof");
-        global::oc_tree->Draw(var+">>"+"hb"+objstr_,selection,"prof");
 
+        if(event_){
+            global::classic_event_tree->Draw(var+">>"+"ha"+objstr_,selection,"prof");
+            global::oc_event_tree->Draw(var+">>"+"hb"+objstr_,selection,"prof");
+        }
+        else{
+            global::classic_tree->Draw(var+">>"+"ha"+objstr_,selection,"prof");
+            global::oc_tree->Draw(var+">>"+"hb"+objstr_,selection,"prof");
+        }
         auto max=oc_o_->GetMaximum();
 
         AxisHisto()->GetYaxis()->SetRangeUser(0, max*1.1);
 
     }
+private:
+
 };
 
 

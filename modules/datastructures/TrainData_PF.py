@@ -43,6 +43,7 @@ class TrainData_PF(TrainData):
                        intuple_z):
         pass
     
+    
     def tonumpy(self,inarr):
         return np.array(list(inarr), dtype='float32')
     
@@ -103,9 +104,12 @@ class TrainData_PF(TrainData):
         feat=[]
         truth=[]
         layer=[]
+        npart_arr=[]
+        truth_en=[]
         
         while used_events < totalevents:
             npart=1
+            tot_true_e=0
             if maxpart>1:
                 npart = np.random.randint(1,maxpart)
                 if not istraining: #flat distribution
@@ -115,6 +119,10 @@ class TrainData_PF(TrainData):
                     probs/= np.sum(probs)
                     
                     npart = np.random.choice(np.array(range(1,maxpart+1)), p= probs)
+            if maxpart<0: #jets
+                npart = np.random.poisson(np.random.randint(1,-maxpart))+1
+                
+                
             if used_events+npart > totalevents:
                 npart=totalevents-used_events
                 
@@ -165,6 +173,7 @@ class TrainData_PF(TrainData):
             
             for i in range(npart):
                 t_energy[t_idx==float(i)] = t_energy_in[i]
+                tot_true_e += t_energy_in[i]
                 t_x[t_idx==float(i)] = t_x_in[i]
                 t_y[t_idx==float(i)] = t_y_in[i]
                 
@@ -197,13 +206,18 @@ class TrainData_PF(TrainData):
             feat.append(i_feat)
             truth.append(i_truth)
             layer.append(np.expand_dims(rechit_layer[0],axis=0))
+            npart_arr.append([npart])
+            truth_en.append([tot_true_e])
             
             
         feat = np.concatenate(feat,axis=0)
         truth = np.concatenate(truth,axis=0)
         layer = np.concatenate(layer,axis=0)
         
-        return feat, np.array(truth,dtype='float32'), layer
+        npart_arr = np.concatenate(npart_arr,axis=0)
+        truth_en = np.concatenate(truth_en,axis=0)
+        
+        return feat, np.array(truth,dtype='float32'), layer, npart_arr, truth_en
         
            
         '''
@@ -219,7 +233,7 @@ class TrainData_PF(TrainData):
         #create truth index:
         
     
-    def convertFromSourceFile(self, filename, weighterobjects, istraining):
+    def _convertFromSourceFile(self, filename, weighterobjects, istraining):
     
         fileTimeOut(filename, 10)#10 seconds for eos to recover 
         
@@ -245,7 +259,7 @@ class TrainData_PF(TrainData):
         #print(rechit_detid)
         
         #for ...
-        feat, truth, layers = self.mergeShowers( 
+        feat, truth, layers, npart_arr, truth_en = self.mergeShowers( 
                      isElectron,
                      isGamma,
                      isPositron,
@@ -277,7 +291,7 @@ class TrainData_PF(TrainData):
         #calo = calo[calosort]
         #calo = np.reshape(calo, [truth.shape[0],16,16,-1])
         
-        debug=True
+        debug=False
         if debug:
             import matplotlib.pyplot as plt
             calotruth = truth[:,0:16*16,:]
@@ -311,8 +325,14 @@ class TrainData_PF(TrainData):
         #print('calo',calo[0])
         #print('track',track[0])
         
+        if hasattr(self, "truth_en"):
+            self.truth_en=truth_en
+        
         return [calo,track],[truth],[]#[tracker0, tracker1, tracker2, tracker3, calo] , [trutharray], []
 
+    def convertFromSourceFile(self, filename, weighterobjects, istraining):
+        f,t,w = self._convertFromSourceFile(filename, weighterobjects, istraining)
+        return f,t,w
 
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         # predicted will be a list
@@ -340,7 +360,7 @@ class TrainData_PF_graph(TrainData_PF):
         
         
     def convertFromSourceFile(self, filename, weighterobjects, istraining):
-        f,t,_ = TrainData_PF.convertFromSourceFile(self, filename, weighterobjects, istraining)
+        f,t,_ = TrainData_PF._convertFromSourceFile(self, filename, weighterobjects, istraining)
         
         for i  in range(2):
             f[i] = np.reshape(f[i],[f[i].shape[0], -1, f[i].shape[-1]]) #flatten
@@ -382,6 +402,21 @@ class TrainData_PF_graph_hipart(TrainData_PF_graph):
 class TrainData_PF_onepart(TrainData_PF):
     def __init__(self):
         TrainData_PF.__init__(self)
-        self.npart=1    
+        self.npart=1   
+        
+        
+        
+class TrainData_PF_jet(TrainData_PF): 
+    def __init__(self):
+        TrainData_PF.__init__(self)
+        self.npart=-15 #produce jets  
+        
+        
+class TrainData_PF_graph_jet(TrainData_PF_graph): 
+    def __init__(self):
+        TrainData_PF_graph.__init__(self)
+        self.npart=-15 #produce jets  
+        
+         
         
     
