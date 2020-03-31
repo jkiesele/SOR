@@ -74,7 +74,7 @@ int plotscript(int argc, char* argv[]){
     fr_energy5_10.setClassicLineColourAndStyle(-1,2);
 
     fr_energy1_5.DrawAxes();
-    fr_energy1_5.AxisHisto()->GetYaxis()->SetRangeUser(1e-3,1.1);
+    fr_energy1_5.AxisHisto()->GetYaxis()->SetRangeUser(1e-3,4.);
     fr_energy1_5.Draw("same","");
     fr_energy5_10.Draw("same","");
     fr_energy10_15.Draw("same","");
