@@ -16,6 +16,7 @@
 
 #include "TTreeReader.h"
 #include "TTreeReaderValue.h"
+#include "TGraphAsymmErrors.h"
 
 namespace legends{
 extern TLegend* legend_full;
@@ -160,6 +161,8 @@ public:
         comparePlotWithAxes("","","",nbins,minbin,maxbin,xaxis,yaxis),
         offset_(offset)
         {
+        outlier_ratio = 0.5;
+
         createObj("",pu,"",nbins,minbin,maxbin);
 
         setStyleDefaults();
@@ -203,6 +206,8 @@ public:
     TH1D* getOutlierFractionOC(){return outliers_oc_;}
     TH1D* getOutlierFractionPF(){return outliers_pf_;}
 
+    double outlier_ratio;
+
 private:
     TH1D * loop(TTree* t, TString histname, int nbins, double minbin, double maxbin,TString pu,TH1D*& outliers_) const{
 
@@ -223,7 +228,7 @@ private:
         while (myReader.Next()) {
             if(! *m_t) continue;
             double ratio = *m_r / *m_t;
-            if(fabs(ratio-1.)>0.8){
+            if(fabs(ratio-1.)>outlier_ratio){
                 outliers_->Fill(*m_t);
                 continue;
             }
@@ -255,7 +260,7 @@ private:
             int bin=h_av->FindBin(*m_t);
             if(! *m_t) continue;
             double ratio = *m_r / *m_t;
-            if(fabs(ratio-1.)>0.8){
+            if(fabs(ratio-1.)>outlier_ratio){
                 continue;
             }
             double var = (ratio - h_av->GetBinContent(bin));
@@ -283,7 +288,7 @@ private:
 };
 
 
-class compareEfficiency: public comparePlotWithAxes<TEfficiency> {
+class compareEfficiency: public comparePlotWithAxes<TGraphAsymmErrors> {
 public:
     compareEfficiency(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin, TString xaxis, TString yaxis):
         comparePlotWithAxes(var,selection,selectionpass,nbins,minbin,maxbin,xaxis,yaxis){
@@ -293,8 +298,27 @@ public:
 
     void createObj(TString var, TString selection, TString selectionpass, int nbins, double minbin, double maxbin) override {
 
-        classic_o_ = makeEfficiency(global::classic_tree, "cl"+objstr_,var, selection,selectionpass,nbins,minbin,maxbin);
-        oc_o_ = makeEfficiency(global::oc_tree, "oc"+objstr_,var, selection,selectionpass,nbins,minbin,maxbin);
+        auto cleff = makeEfficiency(global::classic_tree, "cl"+objstr_,var, selection,selectionpass,nbins,minbin,maxbin);
+        auto oceff = makeEfficiency(global::oc_tree, "oc"+objstr_,var, selection,selectionpass,nbins,minbin,maxbin);
+
+        classic_o_ =cleff -> CreateGraph();
+        oc_o_ =oceff->CreateGraph();
+        removeZeros(classic_o_);
+        removeZeros(oc_o_);
+
+
+    }
+    void Draw(TString opt="", TString which=""){//always draws with same
+        if(which.Contains("OC")){
+            (oc_o_)->Draw(opt+"P");
+        }
+        if(which.Contains("PF")){
+            (classic_o_)->Draw(opt+"P");
+        }
+        if(which.Length()<1){
+            (classic_o_)->Draw(opt+"P");
+            (oc_o_)->Draw(opt);
+        }
 
     }
 
@@ -307,6 +331,7 @@ private:
         otherobj_.push_back(htotal);
 
         TEfficiency* eff = new TEfficiency("eff"+add,"eff"+add,nbins,minbin,maxbin);
+        otherobj_.push_back(eff);
         eff->SetUseWeightedEvents(true);
         eff->SetStatisticOption(TEfficiency::kFNormal);
 
@@ -318,7 +343,23 @@ private:
         eff->SetTotalHistogram(*htotal,"");
         eff->SetPassedHistogram(*hpass,"");
 
+        //std::cout << "eff in "<< var << ":"<< add << ", "<< selection << ": ";
+        //for(int i=1;i<eff->Get)
+
         return eff;
+    }
+
+    void removeZeros(TGraphAsymmErrors* g){
+        int np=g->GetN();
+        for(int i=0;i<np;i++){
+            double x,y;
+            g->GetPoint(i,x,y);
+            if(! y){
+                g->RemovePoint(i);
+                i=0;
+                np=g->GetN();
+            }
+        }
     }
 
 };

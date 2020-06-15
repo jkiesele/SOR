@@ -20,7 +20,9 @@
 int plotscript(int argc, char* argv[]){
 
 
-    global::setTrees();
+    bool usejetfiles=false;
+
+    global::setTrees(usejetfiles);
     TCanvas *cv=createCanvas();
     legends::buildLegends();
     /////////standard legends
@@ -44,13 +46,14 @@ int plotscript(int argc, char* argv[]){
 
 
     legends::legend_smaller->Draw("same");
+    cv->RedrawAxis();
     cv->Print("mom_efficiency.pdf");
 
 
 
     ///////////////////////////////////////////
 
-    compareEfficiency eff_n_true("n_true", "is_true", "(is_true && is_reco)",15,0.75,25.5,"Particles per event","Efficiency");
+    compareEfficiency eff_n_true("n_true", "is_true", "(is_true && is_reco)",15,0.75,22.5,"particles per event","efficiency");
     eff_n_true.DrawAxes();
     eff_n_true.AxisHisto()->GetYaxis()->SetRangeUser(0.65,1.01);
     eff_n_true.Draw("same,P");
@@ -58,6 +61,7 @@ int plotscript(int argc, char* argv[]){
 
     legends::legend_simplest->Draw("same");
 
+    cv->RedrawAxis();
     cv->Print("N_efficiency.pdf");
 
     ///////////////////////////////////////////
@@ -82,6 +86,7 @@ int plotscript(int argc, char* argv[]){
     placeLegend(legends::legend_full, 0.5, 0.55)->Draw("same");
 
     cv->SetLogy();
+    cv->RedrawAxis();
     cv->Print("fake_rate.pdf");
     cv->SetLogy(0);
     /////
@@ -89,7 +94,7 @@ int plotscript(int argc, char* argv[]){
 
     compareTH1D resolution1_5("reco_e/true_e","is_true && is_reco && n_true <= 5",51,0.8,1.2,"p(r)/p(t)","A.U.");
     compareTH1D resolution5_10("reco_e/true_e","is_true && is_reco && n_true <= 10 && n_true>5",51,0.8,1.2,"p(r)/p(t)","# particles");
-    compareTH1D resolution10_15("reco_e/true_e","is_true && is_reco && n_true <= 15 && n_true>10",51,0.8,1.2,"Momentum resolution","# particles");
+    compareTH1D resolution10_15("reco_e/true_e","is_true && is_reco && n_true <= 25 && n_true>15",51,0.8,1.2,"Momentum resolution","# particles");
 
     resolution1_5.DrawAxes();
     //resolution1_5.AxisHisto()->GetYaxis()->SetRangeUser(0,18000);
@@ -104,6 +109,7 @@ int plotscript(int argc, char* argv[]){
 
     legends::legend_onlyn->Draw("same");
 
+    cv->RedrawAxis();
     cv->Print("resolution_pf.pdf");
 
     resolution1_5.DrawAxes();
@@ -112,6 +118,7 @@ int plotscript(int argc, char* argv[]){
     resolution10_15.Draw("same,HIST","OC");
     legends::legend_onlyn->Draw("same");
 
+    cv->RedrawAxis();
     cv->Print("resolution_oc.pdf");
 
     ///////////////////////////////////////////
@@ -132,6 +139,7 @@ int plotscript(int argc, char* argv[]){
     variance5_10.Draw("same","PF");
     variance10_15.Draw("same","PF");
 
+    cv->RedrawAxis();
     cv->Print("variance_pf.pdf");
 
     variance1_5.DrawAxes();
@@ -140,6 +148,7 @@ int plotscript(int argc, char* argv[]){
     variance5_10.Draw("same","OC");
     variance10_15.Draw("same","OC");
 
+    cv->RedrawAxis();
     cv->Print("variance_oc.pdf");
 
 
@@ -151,6 +160,7 @@ int plotscript(int argc, char* argv[]){
     placeLegend(legends::legend_full, 0.2, 0.55);
     legends::legend_full->Draw("same");
 
+    cv->RedrawAxis();
     cv->Print("variance.pdf");
 
     compareProfile elec_variance1_5("(reco_e/true_e - 1)**2:true_e",  "true_id && abs(reco_e/true_e - 1)<0.1 && is_true && is_reco && n_true <= 5",10,0,200,"p(t) [GeV]","variance of (p(r)/p(t) - 1.)");
@@ -171,6 +181,7 @@ int plotscript(int argc, char* argv[]){
     placeLegend(legends::legend_full, 0.2, 0.55);
     legends::legend_full->Draw("same");
 
+    cv->RedrawAxis();
     cv->Print("elec_variance.pdf");
 
     compareProfile gamma_variance1_5("(reco_e/true_e - 1)**2:true_e",  "!true_id && abs(reco_e/true_e - 1)<0.1 && is_true && is_reco && n_true <= 5",10,0,200,"p(t) [GeV]","variance of (p(r)/p(t) - 1.)");
@@ -191,6 +202,7 @@ int plotscript(int argc, char* argv[]){
     placeLegend(legends::legend_full, 0.6, 0.55);
     legends::legend_full->Draw("same");
 
+    cv->RedrawAxis();
     cv->Print("gamma_variance.pdf");
 
 
@@ -212,6 +224,7 @@ int plotscript(int argc, char* argv[]){
     placeLegend(legends::legend_full, 0.6, 0.55);
     legends::legend_full->Draw("same");
 
+    cv->RedrawAxis();
     cv->Print("misidentified.pdf");
 
     return 0;

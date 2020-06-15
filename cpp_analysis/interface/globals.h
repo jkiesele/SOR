@@ -15,6 +15,6 @@ extern TString defaultOCLabel;
 extern TString defaultClassicLabel;
 
 
-void setTrees();
+void setTrees(bool usejetfiles);
 
 }

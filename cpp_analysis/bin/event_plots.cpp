@@ -16,7 +16,7 @@
 
 int main(){
 
-    global::setTrees();
+    global::setTrees(true);
     TCanvas *cv=createCanvas();
     gStyle->SetOptStat(0);
     legends::buildLegends();
@@ -74,7 +74,7 @@ int main(){
 
     jetmassres_var_pu0.renameAxes("m_{j}(t) [GeV]","mis-reco. fraction");
     jetmassres_var_pu0.DrawAxes();
-    jetmassres_var_pu0.AxisHisto()->GetYaxis()->SetRangeUser(5e-4, 0.339);
+    jetmassres_var_pu0.AxisHisto()->GetYaxis()->SetRangeUser(5e-4, 0.569);
     jetmassres_var_pu0.getOutlierFractionOC()->Draw( "same,HIST");
     jetmassres_var_pu02.getOutlierFractionOC()->Draw("same,HIST");
     jetmassres_var_pu08.getOutlierFractionOC()->Draw("same,HIST");
@@ -84,6 +84,7 @@ int main(){
 
     placeLegend(legends::legend_pu_00_02_08, 0.6, 0.55)->Draw("same");
     cv->SetLogy();
+    cv->RedrawAxis();
     cv->Print("jetmass_res_var_outliers.pdf");
     cv->SetLogy(false);
 
